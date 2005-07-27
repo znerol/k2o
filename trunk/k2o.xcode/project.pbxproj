@@ -1,0 +1,290 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 39;
+	objects = {
+		CA31B51408337B0300C0F4E2 = {
+			children = (
+				CA3CB6C7084DDEAE0021291F,
+				CA3CB6DE084DDF470021291F,
+				CA3CB6DD084DDF070021291F,
+				CA31B53508337BB100C0F4E2,
+			);
+			isa = PBXGroup;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		CA31B51608337B0300C0F4E2 = {
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+				WARNING_CFLAGS = "-Wall -Wno-long-double";
+			};
+			isa = PBXBuildStyle;
+			name = Development;
+		};
+		CA31B51708337B0300C0F4E2 = {
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				WARNING_CFLAGS = "-Wno-long-double";
+			};
+			isa = PBXBuildStyle;
+			name = Deployment;
+		};
+		CA31B51808337B0300C0F4E2 = {
+			buildSettings = {
+			};
+			buildStyles = (
+				CA31B51608337B0300C0F4E2,
+				CA31B51708337B0300C0F4E2,
+			);
+			hasScannedForEncodings = 0;
+			isa = PBXProject;
+			mainGroup = CA31B51408337B0300C0F4E2;
+			productRefGroup = CA31B53508337BB100C0F4E2;
+			projectDirPath = "";
+			targets = (
+				CA31B56C08337D2000C0F4E2,
+				CA31B55508337C0200C0F4E2,
+				CA3BD19E0841D1E1009C738A,
+			);
+		};
+		CA31B53508337BB100C0F4E2 = {
+			children = (
+				CA31B55608337C0200C0F4E2,
+				CA3BD19F0841D1E1009C738A,
+			);
+			isa = PBXGroup;
+			name = Products;
+			path = "";
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		CA31B55308337C0200C0F4E2 = {
+			buildActionMask = 2147483647;
+			files = (
+				CA31B56308337C5000C0F4E2,
+				CA3CB6E7084DE34E0021291F,
+			);
+			isa = PBXSourcesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA31B55408337C0200C0F4E2 = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXFrameworksBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA31B55508337C0200C0F4E2 = {
+			buildPhases = (
+				CA31B55308337C0200C0F4E2,
+				CA31B55408337C0200C0F4E2,
+			);
+			buildRules = (
+			);
+			buildSettings = {
+				HEADER_SEARCH_PATHS = ". liblo";
+				OTHER_LDFLAGS = "-llo";
+				PRODUCT_NAME = k2oplay;
+			};
+			dependencies = (
+			);
+			isa = PBXNativeTarget;
+			name = k2oplay;
+			productName = k2oplay;
+			productReference = CA31B55608337C0200C0F4E2;
+			productType = "com.apple.product-type.tool";
+		};
+		CA31B55608337C0200C0F4E2 = {
+			explicitFileType = "compiled.mach-o.executable";
+			includeInIndex = 0;
+			isa = PBXFileReference;
+			path = k2oplay;
+			refType = 3;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		CA31B55C08337C1D00C0F4E2 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
+			name = k2oplay.c;
+			path = src/k2oplay.c;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		CA31B56308337C5000C0F4E2 = {
+			fileRef = CA31B55C08337C1D00C0F4E2;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		CA31B56C08337D2000C0F4E2 = {
+			buildPhases = (
+			);
+			buildSettings = {
+				PRODUCT_NAME = All;
+			};
+			dependencies = (
+				CA31B57408337D2D00C0F4E2,
+				CA336A5D0854EC8500D134ED,
+			);
+			isa = PBXAggregateTarget;
+			name = All;
+			productName = All;
+		};
+		CA31B57308337D2D00C0F4E2 = {
+			containerPortal = CA31B51808337B0300C0F4E2;
+			isa = PBXContainerItemProxy;
+			proxyType = 1;
+			remoteGlobalIDString = CA31B55508337C0200C0F4E2;
+			remoteInfo = k2oplay;
+		};
+		CA31B57408337D2D00C0F4E2 = {
+			isa = PBXTargetDependency;
+			target = CA31B55508337C0200C0F4E2;
+			targetProxy = CA31B57308337D2D00C0F4E2;
+		};
+		CA336A5C0854EC8500D134ED = {
+			containerPortal = CA31B51808337B0300C0F4E2;
+			isa = PBXContainerItemProxy;
+			proxyType = 1;
+			remoteGlobalIDString = CA3BD19E0841D1E1009C738A;
+			remoteInfo = k2orec_2;
+		};
+		CA336A5D0854EC8500D134ED = {
+			isa = PBXTargetDependency;
+			target = CA3BD19E0841D1E1009C738A;
+			targetProxy = CA336A5C0854EC8500D134ED;
+		};
+		CA336A780854EE6700D134ED = {
+			fileRef = CA3CB6E5084DE34E0021291F;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		CA3BD16C0841C967009C738A = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
+			name = k2orec.c;
+			path = src/k2orec.c;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		CA3BD19C0841D1E1009C738A = {
+			buildActionMask = 2147483647;
+			files = (
+				CA3BD1C00841D224009C738A,
+				CA336A780854EE6700D134ED,
+			);
+			isa = PBXSourcesBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA3BD19D0841D1E1009C738A = {
+			buildActionMask = 2147483647;
+			files = (
+			);
+			isa = PBXFrameworksBuildPhase;
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA3BD19E0841D1E1009C738A = {
+			buildPhases = (
+				CA3BD19C0841D1E1009C738A,
+				CA3BD19D0841D1E1009C738A,
+			);
+			buildRules = (
+			);
+			buildSettings = {
+				HEADER_SEARCH_PATHS = ". liblo";
+				PRODUCT_NAME = k2orec;
+				WARNING_LDFLAGS = "-llo";
+			};
+			dependencies = (
+			);
+			isa = PBXNativeTarget;
+			name = k2orec;
+			productName = k2orec_2;
+			productReference = CA3BD19F0841D1E1009C738A;
+			productType = "com.apple.product-type.tool";
+		};
+		CA3BD19F0841D1E1009C738A = {
+			explicitFileType = "compiled.mach-o.executable";
+			includeInIndex = 0;
+			isa = PBXFileReference;
+			path = k2orec;
+			refType = 3;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		CA3BD1C00841D224009C738A = {
+			fileRef = CA3BD16C0841C967009C738A;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		CA3CB6C7084DDEAE0021291F = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = text;
+			path = configure.in;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		CA3CB6DD084DDF070021291F = {
+			children = (
+				CAD19E680842450800A1AE49,
+				CAD19EB908427FE000A1AE49,
+			);
+			isa = PBXGroup;
+			name = doc;
+			path = "";
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		CA3CB6DE084DDF470021291F = {
+			children = (
+				CA31B55C08337C1D00C0F4E2,
+				CA3BD16C0841C967009C738A,
+				CA3CB6E5084DE34E0021291F,
+			);
+			isa = PBXGroup;
+			name = src;
+			path = "";
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		CA3CB6E5084DE34E0021291F = {
+			fileEncoding = 4;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.c.c;
+			name = k2olog.c;
+			path = src/k2olog.c;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		CA3CB6E7084DE34E0021291F = {
+			fileRef = CA3CB6E5084DE34E0021291F;
+			isa = PBXBuildFile;
+			settings = {
+			};
+		};
+		CAD19E680842450800A1AE49 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = text;
+			path = DEVEL.client;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+		CAD19EB908427FE000A1AE49 = {
+			fileEncoding = 30;
+			isa = PBXFileReference;
+			lastKnownFileType = text;
+			path = TODO.txt;
+			refType = 4;
+			sourceTree = "<group>";
+		};
+	};
+	rootObject = CA31B51808337B0300C0F4E2;
+}

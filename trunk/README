@@ -1,0 +1,57 @@
+Welcome to k20 - Kismet to OSC
+
+
+AUTHORS
+lorenz schori lo@znerol.ch
+alejo duque alejo.duque@europeangraduateschool.net
+
+
+WARNING
+k20 is in early development state and it's far from complete. see BUGS and TODO
+list for more info.
+
+
+DESCRIPTION
+k20 is a bridge between the wireless network detector kismet and the open sound
+control protocol. currently it consists of two programs: k2orec acts as a
+kismet client. it connects to a kismet server via tcp and logs the output to a
+textfile. the file consists of a timestamp and an osc-message per line. k2oplay
+reads this file and sends the messages to the specified osc-targets. k20 is
+written in c and only depends on liblo, the lightweight OSC implementation. k20
+runs on macos x (see BUGS) and linux. other platforms are not tested.
+
+
+LINKS
+k20 Homepage: http://znerol.ch/k2o/
+OSC Homepage: http://cnmat.berkeley.edu/OpenSoundControl/
+Kismet Homepage: http://www.kismetwireless.net/
+
+
+BUILDING K20
+- install newest liblo either using your package manager or from source.
+- cd into k2o source folder
+- run ./configure
+- run make
+- optionally run make install
+- if you encounter errors try to run autoreconf -i
+
+
+RUNNING K20
+run k2orec and redirect the standard output to a file. optionally you can
+specify the address of the kismet server on the command line using the -k
+option. run k2oplay with outputfile of k2orec as the first parameter followed
+by a variable list of osc-targets (i.e. osc.udp://localhost:12345). with the -p
+option you can specify an udp port on which k2oplay will listen for incomming
+osc-messages which let you control k20 remotely:
+- /k2o/setrate <newrate>    sets the playbackrate to the float value newrate.
+                            0.0 - stop, 1.0 play in normal speed.
+- /k2o/setpos <newpos>      not implemented yet.
+
+
+BUGS
+- due to a bug in liblo k2oplay does not send propper osc-messages on macos x
+- k2orec does not handle ssids containing spaces correctly.
+
+
+LICENCE
+kismet2osc is free software. Please see the file COPYING for details.
