@@ -37,7 +37,7 @@ diff -ubr gpsdrive-2.09/configure.ac gpsdrive-2.09-osc/configure.ac
  dnl ************************
 diff -ubr gpsdrive-2.09/src/gpsdrive.c gpsdrive-2.09-osc/src/gpsdrive.c
 --- gpsdrive-2.09/src/gpsdrive.c	2004-03-03 21:46:47.000000000 +0100
-+++ gpsdrive-2.09-osc/src/gpsdrive.c	2005-07-28 14:01:15.000000000 +0200
++++ gpsdrive-2.09-osc/src/gpsdrive.c	2005-07-28 14:26:59.000000000 +0200
 @@ -1829,6 +1829,10 @@
  #endif
  #include "gettext.h"
@@ -62,7 +62,7 @@ diff -ubr gpsdrive-2.09/src/gpsdrive.c gpsdrive-2.09-osc/src/gpsdrive.c
  GdkColor red = { 0, 0xFF00, 0x00, 0x00 };
  GdkColor black = { 0, 0x00, 0x00, 0x00 };
  GdkColor white = { 0, 0xFFFF, 0xFFFF, 0xFFFF };
-@@ -5169,6 +5179,17 @@
+@@ -5169,6 +5179,19 @@
    if (importactive)
      return TRUE;
  
@@ -71,31 +71,35 @@ diff -ubr gpsdrive-2.09/src/gpsdrive.c gpsdrive-2.09-osc/src/gpsdrive.c
 +	/* output osc */
 +	// send /gpsdrive/gps/... in a k2o (kismet) compatible way
 +	// fprintf (stderr, _("OSC sending send /gpsdrive/gps/...\n"));
-+    lo_send(otarget, "/gpsdrive/gps/lat", "f", current_lat);
-+    lo_send(otarget, "/gpsdrive/gps/lon", "f", current_long);
-+    lo_send(otarget, "/gpsdrive/gps/spd", "f", groundspeed);
-+    lo_send(otarget, "/gpsdrive/gps/heading", "f", direction);
++	if(otarget) {
++		lo_send(otarget, "/gpsdrive/gps/lat", "f", current_lat);
++		lo_send(otarget, "/gpsdrive/gps/lon", "f", current_long);
++		lo_send(otarget, "/gpsdrive/gps/spd", "f", groundspeed);
++		lo_send(otarget, "/gpsdrive/gps/heading", "f", direction);
++	}
 +	#endif
 +
    if (drawgrid)
      {
  
-@@ -9004,6 +9025,14 @@
+@@ -9004,6 +9027,16 @@
  	  g_timer_stop (disttimer);
  	  g_timer_start (disttimer);
  	  olddist = dist;
 +
 +	#if HAVE_LIBLO
-+	// send /gpsdrive/gps/... in a k2o (kismet) compatible way
-+	// fprintf (stderr, _("OSC sending send /gpsdrive/target/...\n"));
-+    lo_send(otarget, "/gpsdrive/target/lat", "f", target_lat);
-+    lo_send(otarget, "/gpsdrive/target/lon", "f", target_long);
++	if(otarget) {
++		// send /gpsdrive/gps/... in a k2o (kismet) compatible way
++		// fprintf (stderr, _("OSC sending send /gpsdrive/target/...\n"));
++		lo_send(otarget, "/gpsdrive/target/lat", "f", target_lat);
++		lo_send(otarget, "/gpsdrive/target/lon", "f", target_long);
++	}
 +	#endif
 +
  	}
      }
  
-@@ -9893,6 +9922,9 @@
+@@ -9893,6 +9926,9 @@
  	   ("-W x  set x to 1 to switch WAAS/EGNOS on, set to 0 to switch off\n"),
  	   _("-H X  correct altitude, adding this value to altitude\n"),
  	   _("-z    don't display zoom factor and scale\n\n"));
@@ -105,7 +109,7 @@ diff -ubr gpsdrive-2.09/src/gpsdrive.c gpsdrive-2.09-osc/src/gpsdrive.c
  
  }
  
-@@ -10696,7 +10728,7 @@
+@@ -10696,7 +10732,7 @@
    do
      {
  /*** Mod by Arms */
@@ -114,7 +118,7 @@ diff -ubr gpsdrive-2.09/src/gpsdrive.c gpsdrive-2.09-osc/src/gpsdrive.c
        switch (i)
  	{
  	case 'a':
-@@ -10809,6 +10841,16 @@
+@@ -10809,6 +10845,16 @@
  	  forcehavepos = TRUE;
  	  break;
  
