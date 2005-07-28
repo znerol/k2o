@@ -1,0 +1,37 @@
+PATCHES
+
+in this directory you'll find some patches for other applications which make them work better with k2o.
+
+#####################
+gpsdrive-osc-lo1.diff
+#####################
+
+this patch teaches gpsdrive to use liblo for sending the actual position, speed, direction and the target position via osc messages. the message format is:
+/gpsdrive/gps/lat <float>
+/gpsdrive/gps/lon <float>
+/gpsdrive/gps/spd <float>
+/gpsdrive/gps/heading <float>
+/gpsdrive/target/lat <float>
+/gpsdrive/target/lon <float>
+apply this patch by running the following command from within your gpsdrive source directory:
+patch -p1 < path/to/gpsdrive-osc-lo1.diff
+autoreconf
+./configure --with-liblo[=DIR]
+make
+make install
+
+start gpsdrive using the new -O option like this
+gpsdrive -O osc.udp://localhost:54321
+
+
+######################
+liblo-0.18-noipv6.diff
+######################
+
+this is a patch for liblo which gives you a compile-time option to disable support for ipv6. this is nessesary on osx to force liblo using ipv4 because most of the osc aware applications available on osx only communicatie via ipv4. apply this patch by running the following command from within your liblo source directory:
+
+patch -p1 < path/to/liblo-0.18-noipv6.diff
+autoreconf
+./configure --disable-ipv6
+make
+sudo make install

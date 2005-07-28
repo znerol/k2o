@@ -1,0 +1,133 @@
+diff -ubr gpsdrive-2.09/configure.ac gpsdrive-2.09-osc/configure.ac
+--- gpsdrive-2.09/configure.ac	2004-03-03 21:46:47.000000000 +0100
++++ gpsdrive-2.09-osc/configure.ac	2005-07-27 18:38:10.000000000 +0200
+@@ -157,6 +157,33 @@
+ localedir='${prefix}/share/locale'
+ AC_SUBST(localedir)
+ 
++
++AC_ARG_WITH(liblo,
++[  --with-liblo[=DIR]     use liblo in DIR],
++[
++    if test $withval = no; then
++		want_liblo=no
++    elif test $withval = yes; then
++		want_liblo=yes
++    else
++		LIBLO_DIR=$withval
++		CPPFLAGS="${CPPFLAGS} -I$withval/include"
++		LDFLAGS="${LDFLAGS} -L$withval/lib"
++		want_liblo=yes
++    fi
++],[
++        want_liblo=no 
++])
++
++# Checks for liblo.
++if test $want_liblo = yes; then
++	AC_CHECK_LIB(lo,lo_send_internal,
++		[AC_DEFINE(HAVE_LIBLO, 1, use liblo for osc support)],
++		[AC_MSG_ERROR(You need to have liblo installed.)])
++fi
++
++
++
+ dnl ************************
+ dnl Checks for header files.
+ dnl ************************
+diff -ubr gpsdrive-2.09/src/gpsdrive.c gpsdrive-2.09-osc/src/gpsdrive.c
+--- gpsdrive-2.09/src/gpsdrive.c	2004-03-03 21:46:47.000000000 +0100
++++ gpsdrive-2.09-osc/src/gpsdrive.c	2005-07-28 14:01:15.000000000 +0200
+@@ -1829,6 +1829,10 @@
+ #endif
+ #include "gettext.h"
+ 
++#if HAVE_LIBLO
++#include "lo/lo.h"
++#endif
++
+ 
+ #include "LatLong-UTMconversion.h"
+ #include "gpsdrive.h"
+@@ -1883,6 +1887,12 @@
+ gdouble zero_long, zero_lat, target_long, target_lat, dist;
+ gdouble long_diff = 0, lat_diff = 0;
+ GdkGC *kontext;
++
++#if HAVE_LIBLO
++lo_address	*otarget = NULL;
++#endif
++
++
+ GdkColor red = { 0, 0xFF00, 0x00, 0x00 };
+ GdkColor black = { 0, 0x00, 0x00, 0x00 };
+ GdkColor white = { 0, 0xFFFF, 0xFFFF, 0xFFFF };
+@@ -5169,6 +5179,17 @@
+   if (importactive)
+     return TRUE;
+ 
++
++	#if HAVE_LIBLO
++	/* output osc */
++	// send /gpsdrive/gps/... in a k2o (kismet) compatible way
++	// fprintf (stderr, _("OSC sending send /gpsdrive/gps/...\n"));
++    lo_send(otarget, "/gpsdrive/gps/lat", "f", current_lat);
++    lo_send(otarget, "/gpsdrive/gps/lon", "f", current_long);
++    lo_send(otarget, "/gpsdrive/gps/spd", "f", groundspeed);
++    lo_send(otarget, "/gpsdrive/gps/heading", "f", direction);
++	#endif
++
+   if (drawgrid)
+     {
+ 
+@@ -9004,6 +9025,14 @@
+ 	  g_timer_stop (disttimer);
+ 	  g_timer_start (disttimer);
+ 	  olddist = dist;
++
++	#if HAVE_LIBLO
++	// send /gpsdrive/gps/... in a k2o (kismet) compatible way
++	// fprintf (stderr, _("OSC sending send /gpsdrive/target/...\n"));
++    lo_send(otarget, "/gpsdrive/target/lat", "f", target_lat);
++    lo_send(otarget, "/gpsdrive/target/lon", "f", target_long);
++	#endif
++
+ 	}
+     }
+ 
+@@ -9893,6 +9922,9 @@
+ 	   ("-W x  set x to 1 to switch WAAS/EGNOS on, set to 0 to switch off\n"),
+ 	   _("-H X  correct altitude, adding this value to altitude\n"),
+ 	   _("-z    don't display zoom factor and scale\n\n"));
++	   #if HAVE_LIBLO
++	g_print ("-O X  set OSC target. e.g osc.udp://localhost:12345\n\n");
++	   #endif
+ 
+ }
+ 
+@@ -10696,7 +10728,7 @@
+   do
+     {
+ /*** Mod by Arms */
+-      i = getopt (argc, argv, "W:ESA:ab:c:zx1qivdDFepH:hnf:l:t:s:o:r:?");
++      i = getopt (argc, argv, "W:ESA:ab:c:zx1qivdDFepH:hnf:l:t:s:o:r:?O:");
+       switch (i)
+ 	{
+ 	case 'a':
+@@ -10809,6 +10841,16 @@
+ 	  forcehavepos = TRUE;
+ 	  break;
+ 
++	#if HAVE_LIBLO
++	case 'O':
++      otarget = lo_address_new_from_url(optarg);
++      if(!otarget) {
++		fprintf (stderr, _("Cannot connect to %s\n"), optarg);
++		exit (1);
++		}
++		fprintf (stderr, _("Connected to OSC target %s\n"), optarg);
++	  break;
++	#endif
+ 	}
+     }
+   while (i != -1);
