@@ -72,11 +72,11 @@
 
 /* Begin PBXFileReference section */
 		CA31B55608337C0200C0F4E2 /* k2oplay */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = k2oplay; sourceTree = BUILT_PRODUCTS_DIR; };
-		CA31B55C08337C1D00C0F4E2 /* k2oplay.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; name = k2oplay.c; path = src/k2oplay.c; sourceTree = "<group>"; };
-		CA3BD16C0841C967009C738A /* k2orec.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = k2orec.c; path = src/k2orec.c; sourceTree = "<group>"; };
+		CA31B55C08337C1D00C0F4E2 /* k2oplay.c */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = sourcecode.c.c; path = k2oplay.c; sourceTree = "<group>"; };
+		CA3BD16C0841C967009C738A /* k2orec.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = k2orec.c; sourceTree = "<group>"; };
 		CA3BD19F0841D1E1009C738A /* k2orec */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = k2orec; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA3CB6C7084DDEAE0021291F /* configure.in */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text; path = configure.in; sourceTree = "<group>"; };
-		CA3CB6E5084DE34E0021291F /* k2olog.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = k2olog.c; path = src/k2olog.c; sourceTree = "<group>"; };
+		CA3CB6E5084DE34E0021291F /* k2olog.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = k2olog.c; sourceTree = "<group>"; };
 		CAD19E680842450800A1AE49 /* DEVEL.client */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text; path = DEVEL.client; sourceTree = "<group>"; };
 		CAD19EB908427FE000A1AE49 /* TODO.txt */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text; path = TODO.txt; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -134,7 +134,7 @@
 				CA3BD16C0841C967009C738A /* k2orec.c */,
 				CA3CB6E5084DE34E0021291F /* k2olog.c */,
 			);
-			name = src;
+			path = src;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

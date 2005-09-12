@@ -32,6 +32,7 @@
 #include <math.h>
 
 #include "k2olog.h"
+#include "k2ohash.h"
 
 #include "lo/lo.h"
 
@@ -55,6 +56,7 @@ pthread_mutex_t	schedulerMutex;
 pthread_cond_t	rescheduleCondVar;
 double			rate = 1.0;
 int				follow = 1;
+int				loop = 0;
 
 struct timespec		lasttime, lastpos = {0,0}, curpos = {0,0};
 
@@ -96,7 +98,10 @@ fileIndexThreadEntry()
 	int			c = 0;
 	int			cpos = 0;
 	timedMessage*	tm = NULL;
-
+	
+	// path hash table
+	str_str_hash	pathmap = str_str_hash_new();
+	
 	ILOG("started filereader");
 	while(1) {
 		flockfile(infd);
@@ -130,8 +135,17 @@ fileIndexThreadEntry()
 				
 				// read path
 				char *path = strtok_r(NULL, " ", &ctx);
-				tm->path = (char*)malloc(strlen(path) + 1);
-				strcpy(tm->path, path);
+				char **entryptr = str_str_hash_get(pathmap, path);
+				char *entry = NULL;
+				if(!entryptr) {
+					entry = (char*)malloc((strlen(path) + 1)*sizeof(char));
+					strcpy(entry, path);
+					str_str_hash_set(&pathmap, entry, entry);
+				}
+				else {
+					entry = (*entryptr);
+				}
+				tm->path = entry;
 				
 				// read values
 				int i;
@@ -258,6 +272,7 @@ void usage(char *executable){
 "                    this port.\n"
 " -r, --rate         start in replay mode and set rate. if no rate is given 1.0\n"
 "                    is used\n"
+" -l, --loop         loop the sequence.\n"
 " -f, --prefix       prefix path for received messages. standard is %s.\n"
 " -d, --debug        set debug level to 0-%d. default is %d.\n"
 " -v, --version      version information\n"
@@ -276,6 +291,7 @@ main (int argc, char **argv)
 	{ "port",	required_argument, 0, 'p' },
 	{ "rate",	optional_argument, 0, 'r' },
 	{ "debug",	required_argument, 0, 'd' },
+	{ "loop",	no_argument, 0, 'l' },
 	{ "prefix",	required_argument, 0, 'f' },
 	{ "version", no_argument, 0, 'v' },
 	{ "help", no_argument, 0, 'h' },
@@ -293,7 +309,7 @@ main (int argc, char **argv)
 		/* getopt_long stores the option index here. */
 		int option_index = 0;
 		
-		int c = getopt_long (argc, argv, "vhp:r:d:f:", long_options, &option_index);
+		int c = getopt_long (argc, argv, "vhlp:r:d:f:", long_options, &option_index);
 		
 		/* Detect the end of the options. */
 		if (c == -1)
@@ -337,6 +353,12 @@ main (int argc, char **argv)
 				break;
 			}
 				
+			case 'l':
+			{
+				loop=1;
+				DLOG("turned looping on");
+			}
+
 			case 'h':
 			case '?':
 				usage(argv[0]);
@@ -346,6 +368,11 @@ main (int argc, char **argv)
 			default:
 				abort ();
 		}
+	}
+	
+	// check the arguments
+	if (follow && loop) {
+		ELOG("sorry, can't loop a file in follow mode");
 	}
 	
 	// if we don't have minimum 2 more arguments, something is wrong
@@ -406,7 +433,7 @@ main (int argc, char **argv)
 	err = pthread_create(&fileIndexThread, NULL, &fileIndexThreadEntry, NULL);
 	
 	// current and last sendt message
-	timedMessage	*mcurrent = NULL, *mlastsendt = NULL;
+	timedMessage	*mcurrent = NULL; //, *mlastsendt = NULL;
 
 	// wait for first message
 	pthread_mutex_lock(&schedulerMutex);
@@ -426,7 +453,7 @@ main (int argc, char **argv)
 	
 	ILOG("starting the send loop");
 	
-	int mline = 0;
+//	int mline = 0;
 	int state = 0;
 	while(1) {
 		// lock scheduler mutex for the whole loop. it will be unlocked by
@@ -485,36 +512,57 @@ main (int argc, char **argv)
 					else if (rate > 0) {
 						nmsg = mcurrent->next;
 						
-						// if we are just sending or we are moving but next
-						// message is there. break.
+						// if we are just sending or we are moving and next
+						// message is there and break.
 						if(state == 0 || nmsg) {
 							// break out of the loop and send message
 							break;
 						}
 						else {
-							// we reached the end of the chain. wait unlimited
-							limited = 0;
-							if(rate > 1) {
-								// switch to following mode.
-								follow = 1;
-								rate = 0;
+							// state == 1 && nmesg == NULL
+							// we reached the end of the chain.
+							
+							if (loop) {
+								// flip over if we are in loop mode
+								limited = 1;
+								limit = timespec_dadd(now, 0);
+								nmsg = mchain;
+							}
+							else {
+								// wait unlimited
+								limited = 0;
+								if(rate > 1) {
+									// switch to following mode.
+									follow = 1;
+									rate = 0;
+								}
 							}
 						}
 					}
 					// backward
 					else if (rate < 0) {
-						// check if current message is first message and stop if 
-						// appropriate.
+						// check if current message is first message and stop or
+						// flip over.
 						nmsg = mcurrent->prev;
-						// if we are just sending or we are moving but next
-						// message is there. break.
+						// if we are just sending or we are moving and previous
+						// message is there then break.
 						if(state == 0 || nmsg) {
 							// break out of the loop and send message
 							break;
 						}
 						else {
-							// stop if we are at the begin of the chain.
-							rate = 0;
+							// state == 1 && nmesg == NULL
+							// we reached the begin of the chain.
+							if (loop) {
+								// flip over if we are in loop mode.
+								limited = 1;
+								limit = timespec_dadd(now, 0);
+								nmsg = mlast;
+							}
+							else {
+								// stop if we are not.
+								rate = 0;
+							}
 						}
 					}
 				}
