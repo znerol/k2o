@@ -37,6 +37,7 @@
 #include <lo/lo.h>
 
 #include "k2olog.h"
+#include "k2odata.h"
 
 #define		kWriteBufLen 2048
 char		writeBuf[kWriteBufLen];
@@ -51,39 +52,58 @@ struct hostent	*kismHost;
 struct sockaddr_in	kismRemoteSock;
 struct sockaddr_in	kismLocalSock;
 char		kismHostname[MAXHOSTNAMELEN];
-char		kismServername[32] = "";
-char		kismMajor[24] = "", kismMinor[24] = "", kismTiny[24] = "";
 time_t		kismServerStart = 0;
 
 char		kismPrefixPath[32] = "/kismet";
 
-// Array containing interesting protocols and a placeholder for fields.
-const void*	kismProtoNet[64] = {"NETWORK",NULL};
-const void*	kismProtoClient[64] = {"CLIENT",NULL};
-const void*	kismProtoGps[16] = {"GPS",NULL};
-const void*	kismProtoInfo[16] = {"INFO",NULL};
-const void*	kismProtoPacket[32] = {"PACKET",NULL};
-const void*	kismProtoWepkey[8] = {"WEPKEY",NULL};
-const void*	kismProtoCard[16] = {"CARD",NULL};
-const void*	kismProtocolMap[] = {
-	kismProtoNet,
-	kismProtoClient,
-	kismProtoGps,
-	kismProtoInfo,
-	kismProtoPacket,
-	kismProtoWepkey,
-	kismProtoCard,
-	NULL};
+// field buffer structure
+typedef struct k2oProtoField {
+	char		name[32];
+	char*		value;
+	char		type;
+} k2oProtoField;
+DECLARE_LIST(k2oProtoField*,field)
+DEFINE_LIST(k2oProtoField*,field)
 
-const void*	kismMatchMap[] = {
-	"NETWORK","*","/net/%d",NULL,
-	"CLIENT","*","/net/%d/client/%d",NULL,
-	"GPS","*","/gps",NULL,
-	"INFO","*","/info",NULL,
-	"PACKET","*","/packet", NULL,
-	"WEPKEY","*","/wepkey",NULL,
-	"CARD","*","/card",NULL,
-	NULL};
+// message template structure
+typedef struct k2oMessageTemplate{
+	char		pfx[64];
+	int			types_set;
+	char		types[32];
+	field_list	fields;			// list of k2oProtoField structures
+} k2oMessageTemplate;
+DECLARE_LIST(k2oMessageTemplate*,mesg)
+DEFINE_LIST(k2oMessageTemplate*,mesg)
+
+// protocol structure
+typedef struct k2oProtocol {
+	char		name[32];
+	char		pfx[64];		// the osc prefix
+	int			(*pfx_func)(struct k2oProtocol*, char**, int);		
+								// this can also be a function (k2oProtocol,value string)
+	field_list	fields;			// fieldstruct
+	mesg_list	messages;		// osctemplate
+} k2oProtocol;
+DECLARE_HASH(proto, char*, k2oProtocol*)
+DEFINE_HASH(proto, char*, k2oProtocol*, hash_string, string_equal)
+proto_hash		protocolMap;
+
+// network and client struct types
+typedef struct kismClient{
+	int			index;
+} kismClient;
+DECLARE_HASH(client, char*, kismClient*)
+DEFINE_HASH(client, char*, kismClient*, hash_string, string_equal)
+
+typedef struct kismNetwork{
+	int				index;
+	int				clientCount;
+	client_hash		clientMap;
+} kismNetwork;
+DECLARE_HASH(net, char*, kismNetwork*)
+DEFINE_HASH(net, char*, kismNetwork*, hash_string, string_equal)
+net_hash		networkMap;
+int				netcount = 0;
 
 void** kismNetworks = NULL;
 void** kismClients = NULL;
@@ -100,10 +120,10 @@ int kismetSend(const char* data);
 void kismetListProtocols(void);
 void kismetListCapability(const char* protocol);
 void kismetEnableProtocol(const char* protocol);
-void* findProtocol(const char* protocol);
+//void* findProtocol(const char* protocol);
 void strtolow(char** s);
-char* propernextvaluetype(char** ctx, char* type);
-void* insertIfNotContained(char* value, void* set, int size, int* idx);
+char* propernextvaluetype(char** ctx, char* type, int addNullChar);
+//void* insertIfNotContained(char* value, void* set, int size, int* idx);
 
 double timeval_diff(struct timeval a, struct timeval b)
 {
@@ -182,9 +202,64 @@ int kismetConnect (short int port, char *host)
 	
     kismF = fdopen(kismFD, "r");
 	
-    // FIXME: turn on protocols here
-	
     return 1;
+}
+
+int networkPrefix(k2oProtocol* proto, char** outPrefix, int outPrefixLength)
+{
+	k2oProtoField*	bssid = (k2oProtoField*)field_list_first_data(proto->fields);
+	if (strncmp(bssid->name,"bssid",sizeof(bssid->name) - sizeof(char)) ||
+		bssid->value == NULL) {
+		WLOG("could not get contents of bssid field of network\n");
+		return -1;
+	}
+	
+	kismNetwork*	net = (kismNetwork*)net_hash_get(networkMap,bssid->value);
+	if(!net) {
+		net = (kismNetwork*)calloc(1,sizeof(kismNetwork));
+		net_hash_set(&networkMap,bssid->value,net);
+		net->index = netcount;
+		netcount++;
+	}
+	return snprintf(*outPrefix, outPrefixLength,
+					"%s/network/%d", kismPrefixPath, net->index);
+}
+
+int clientPrefix(k2oProtocol* proto, char** outPrefix, int outPrefixLength)
+{
+	field_list_iterator fi = field_list_first(proto->fields);
+	k2oProtoField*	bssid = (k2oProtoField*)field_list_value(fi);
+	
+	if (strncmp(bssid->name,"bssid",sizeof(bssid->name) - sizeof(char)) ||
+		bssid->value == NULL) {
+		WLOG("could not get contents of bssid field of client\n");
+		return -1;
+	}
+	
+	kismNetwork*	net = (kismNetwork*)net_hash_get(networkMap,bssid->value);
+	if(!net) {
+		WLOG("could not get network for this bssid\n");
+		return -1;
+	}
+	
+	field_list_next(&fi);
+	k2oProtoField*	macaddr = (k2oProtoField*)field_list_value(fi);
+	kismClient*		client = (kismClient*)client_hash_get(net->clientMap,macaddr->value);
+	if (!client) {
+		client = (kismClient*)calloc(1,sizeof(kismClient));
+		client_hash_set(&net->clientMap,macaddr->value,client);
+		client->index = net->clientCount;
+		net->clientCount++;
+	}
+	
+	return snprintf(*outPrefix, outPrefixLength,
+					"%s/network/%d/client/%d",
+					kismPrefixPath, net->index, client->index);
+}
+
+int packetPrefix(k2oProtocol* proto, char** outPrefix, int outPrefixLength)
+{
+	return -1;
 }
 
 int kismetPerformNetIO (void)
@@ -285,8 +360,10 @@ int kismetParse(const char* data) {
         return -1;
     }
 	else if (!strncmp(header, "*KISMET", 64)) {
-		int junkmajor, junkminor, junktiny;
-		char build[24];
+		int		junkmajor, junkminor, junktiny;
+		char	kismServername[32] = "";
+		char	kismMajor[24] = "", kismMinor[24] = "", kismTiny[24] = "";
+		char	build[24];
 		int channel_hop;
         if (sscanf(data+hdrlen, "%d.%d.%d %d \001%32[^\001]\001 %24s %d "
                    "%24[^.].%24[^.].%24s",
@@ -302,51 +379,74 @@ int kismetParse(const char* data) {
 		char *proto;
 		const char *sep = ",\n";
 
+		// clear old protocol hash
+		proto_hash_clear(&protocolMap);
+		
+		// list capabilities for each protocol
 		for (proto = strtok_r((char*)data+hdrlen, sep, &last);
 			 proto;
 			 proto = strtok_r(NULL, sep, &last))
 		{
 			// list capabilities if protocol is interesting
-			if (findProtocol(proto)) {
+			// if (findProtocol(proto)) {
 				kismetListCapability(proto);
-			}
+			// }
 		}
 	}
 	else if (!strncmp(header, "*CAPABILITY", 64)) {		
 		// return if we don't have a complete line
-		char* nl = strchr((char*)data+hdrlen,'\n');
+		char *fields = (char*)data+hdrlen;
+		char* nl = strchr(fields,'\n');
 		if(!nl)
 			return 0;
 		
-		// check if protocol should be osc captured
-		char *proto;
-		char *plast;
-		proto = strtok_r((char*)data+hdrlen, " \n", &plast);
-		void**	pfields = findProtocol(proto);
-
-		if(pfields) {
-			// make new buffer with size nl-plast+1
-			int buflen = nl-plast+1;
-			char* fieldbuf = malloc(buflen);
-			// null terminate and copy buffer
-			(*nl) = '\0';
-			strncpy(fieldbuf,plast,buflen);
+		char *flast, *field;
+		field = strtok_r(fields, " \n", &flast);
+		k2oProtocol* proto = (k2oProtocol*)calloc(1,sizeof(k2oProtocol));
+		strncpy(proto->name,field,sizeof(proto->name)-1);
 		
-			char* field;
-			char* flast;
-			void** pfield;
-			
-			// tokenize buffer and assign keys to array
-			// THIS IS DANGEROUS BECAUSE WE DON'T CHECK THE ARRAY LENGTH!
-			for (field = strtok_r(fieldbuf,",", &flast), pfield = &pfields[1];
-				 field;
-				 field = strtok_r(NULL,",", &flast),	pfield++)
-			{
-				*pfield = field;
-			}
+		if (!strncmp(proto->name, "NETWORK", 64)) {
+			proto->pfx_func = networkPrefix;
 		}
+		else if(!strncmp(proto->name, "CLIENT", 64)) {
+			proto->pfx_func = clientPrefix;
+		}
+		else if(!strncmp(proto->name, "PACKET", 64)) {
+			proto->pfx_func = packetPrefix;			
+		}
+		else {
+			strtolow((char**)&proto->name);
+			snprintf(proto->pfx,64,"%s/%s",kismPrefixPath,proto->name);
+		}
+		
+		// create protocol fields
+		field_list	fieldList = field_list_new();
+		for (; field; field = strtok_r(NULL,",\n", &flast))
+		{
+			k2oProtoField* f = calloc(1,sizeof(k2oProtoField));
+			strncpy(f->name,field,sizeof(f->name)-1);
+			field_list_push_back(&fieldList,f);
+		}
+		proto->fields = fieldList;
+		
+		// create message templates
+		mesg_list	messageList = mesg_list_new();
+		
+		// just create a message for each field for now
+		field_list_iterator fi = field_list_first(fieldList);
+		for( ; !field_list_done(fi); field_list_next(&fi)) {
+			k2oProtoField* f = (k2oProtoField*)field_list_value(fi);
+			k2oMessageTemplate* t = calloc(1,sizeof(k2oMessageTemplate));
+			strncpy(t->pfx,f->name,sizeof(t->pfx)-1);
+			t->fields = field_list_new();
+			field_list_push_back(&t->fields,f);
+		}
+
+		proto->messages = messageList;
+
 		// enable this protocol
-		kismetEnableProtocol(proto);
+		proto_hash_set(&protocolMap,proto->name,proto);
+		kismetEnableProtocol(proto->name);
 	}	
 	else if (!strncmp(header, "*TIME", 64)) {
 		time_t	serv_time;
@@ -378,115 +478,70 @@ int kismetParse(const char* data) {
     }
 	else {
 		// return if line is not complete
+		char* fbuf = (char*)data+hdrlen;
 		char* nl = strchr((char*)data+hdrlen,'\n');
 		if(!nl) return 0;
 		
-		// check if protocol should be osc captured
-		char*	proto = &header[1];
-		void**	pfields = findProtocol(proto);
+		// check for the header without asterisk in the header map
+		k2oProtocol *proto = (k2oProtocol*)proto_hash_get(protocolMap, &header[1]);
+		if (!proto) {
+			return 0;
+		}
 		
-		// buffers and pointers
-		char *fbuf = (char*)data+hdrlen;
-		void **fheaders = &pfields[1];
-		char *fvalue;
+		// iterate thru field list of protocol and fill message template buffers
+		field_list_iterator iter = field_list_first(proto->fields);
+		for( ; !field_list_done(iter); field_list_next(&iter)) {
+			k2oProtoField* f = (k2oProtoField*)field_list_value(iter);
+			f->value = propernextvaluetype(&fbuf,&f->type,1);
+		}
 
+		// setup osc prefix path
+		// this will either grab the value stored in a string member or compute
+		// it with a function. e.g. for retreiving the correct value for net-
+		// work and client messages
+		char*	pfx = "";
+		char	osc_pfx[64] = "";
+		if (proto->pfx) {
+			pfx = proto->pfx;
+		}
+		else if (proto->pfx_func) {
+			(proto->pfx_func)(proto,(char**)&osc_pfx,sizeof(osc_pfx)-sizeof(char));
+			pfx = osc_pfx;
+		}
+				
 		// calculate timestamp
 		struct timeval now;
 		gettimeofday(&now,NULL);
 		double dt = timeval_diff(now,startTime);
-		
-		// setup prefix path
-		strtolow(&proto);
-		char	path[256];
-		int		pathOff;
-		
-		pathOff = snprintf(path,sizeof(path),"%f %s/%s",dt,kismPrefixPath,proto);
 
-		// in NETWORK bssid should be the first field.
-		if (!strncmp(proto, "network", 64) && !strncmp(*fheaders, "bssid", 32)) {
-			// read bssid
-			fvalue = propernextvaluetype(&fbuf,NULL);
-			// 1. look up bssid value in network array. add it if appropriate.
-			// 2. add /index as path component
-			int	idx;
-			kismNetworks = insertIfNotContained(fvalue, kismNetworks, 64, &idx);
-			pathOff += snprintf(path+pathOff,sizeof(path)-pathOff,"/%d",idx);
-			fheaders++;
-		}
-		
-		// in CLIENT bssid should be the first field.
-		if(!strncmp(proto, "client", 64) && !strncmp(*fheaders, "bssid", 32)) {
-			// bssid
-			fvalue = propernextvaluetype(&fbuf,NULL);
-			// mac address
-			fheaders++;
-			fvalue = propernextvaluetype(&fbuf,NULL);
-			// 1. look up mac value in clients array of network. add it if appropriate.
-			// 2. add /client/index as path component
-			int idx;
-			kismClients = insertIfNotContained(fvalue, kismClients, 64, &idx);
-			pathOff += snprintf(path+pathOff,sizeof(path)-pathOff,"/%d",idx);
-			fheaders++;
-		}
-		
-		// print osc messages
-		if(fheaders) {
-			char typechar;
+		// iterate thru message templates and output them
+		mesg_list_iterator ti = mesg_list_first(proto->messages);
+		for( ; !mesg_list_done(ti); mesg_list_next(&ti))
+		{
+			k2oMessageTemplate* t = (k2oMessageTemplate*)mesg_list_value(ti);
 			
-			while((fvalue = propernextvaluetype(&fbuf,&typechar)) && *fheaders) {
-				printf("%s/%s %c %s\n",path,(char*)(*fheaders),typechar,fvalue);
-				// increment header pointer
-				fheaders++;
+			// setup type string if nessesary
+			if (!t->types_set) {
+				int i = 0;
+				LIST_ITERATE(field, t->fields, f,
+					t->types[i] = ((k2oProtoField*)field_list_value(f))->type;
+					i++;
+				)
+				t->types[i] = '\0';
 			}
-			fflush(stdout);
-		}
-		else {
-			DLOG("we don't handle protocol %s",proto);
+			
+			// print osc prefix and types
+			printf("%f %s/%s %s",dt,pfx,t->pfx,t->types);
+			
+			// iterate thru buffers
+			LIST_ITERATE(field, t->fields, f,
+				printf(" %s",((k2oProtoField*)field_list_value(f))->value);
+			)
+			printf("\n");
 		}
     }	
 
     return 1;
-}
-
-void* insertIfNotContained(char* value, void* set, int size, int* idx)
-{
-	void **entry;
-	
-	// search object in array
-	for(*idx = 0, entry = set; set && *entry; (*idx)++, entry++) {
-		if(!strncmp(value,*entry,size)) {
-			// return old set and set idx
-			return set;
-		}
-	}
-	DLOG("*idx = %d",*idx);
-	
-	// resize array and insert object
-	void **newset;
-	if(set) {
-		newset = realloc(set,(*idx+2)*sizeof(void*));
-	}
-	else {
-		newset = malloc((*idx+2)*sizeof(void*));
-	}
-	if(!newset) {
-		DLOG("allocation failed");
-		return set;
-	}
-
-	// copy value string
-	size_t vlen = strlen(value) + 1;
-	char* valstr = malloc(vlen);
-	if(!valstr) {
-		ELOG("allocation failed");
-		return set;
-	}
-	strncpy(valstr,value,vlen);
-	newset[*idx] = valstr;
-	
-	// terminate list
-	bzero(&newset[*idx + 1],sizeof(void*));
-	return newset;
 }
 
 int kismetSend(const char* data)
@@ -523,18 +578,6 @@ void kismetListCapability(const char* protocol) {
     kismetSend(data);
 }
 
-void* findProtocol(const char* protocol) {
-	void**	entry = (void**)&kismProtocolMap;
-	char**	protofields;
-	while(*entry) {
-		protofields = *entry;
-		if(!strncmp(protocol,protofields[0],64))
-			break;
-		entry++;
-	}
-	return *entry;
-}
-
 void strtolow(char** s) 
 {
 	char	*c;
@@ -543,7 +586,7 @@ void strtolow(char** s)
 	}
 }
 
-char* propernextvaluetype(char** ctx, char* type)
+char* propernextvaluetype(char** ctx, char* type, int addNullChar)
 {
 	if((**ctx) == '\0') {
 		return NULL;
@@ -566,7 +609,10 @@ char* propernextvaluetype(char** ctx, char* type)
 				
 			case ' ':
 				if(!quoted) {
-					*fchar = '\0';
+					// close string and break if we found an unqouted space
+					if (addNullChar) {
+						*fchar = '\0';
+					}
 					done = 1;
 				}
 				break;
@@ -659,7 +705,7 @@ int main (int argc, char **argv)
 			case 'f':
 			{
 				if(optarg && optarg[0]) {
-					strncpy(kismPrefixPath,optarg,sizeof(kismPrefixPath));
+					strncpy(kismPrefixPath,optarg,sizeof(kismPrefixPath)-1);
 					DLOG("set osc message prefix to %s", kismPrefixPath);
 				}
 				break;

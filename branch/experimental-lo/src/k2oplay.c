@@ -32,7 +32,7 @@
 #include <math.h>
 
 #include "k2olog.h"
-#include "k2ohash.h"
+#include "k2odata.h"
 
 #include "lo/lo.h"
 

@@ -29,6 +29,8 @@
 		CA336A780854EE6700D134ED /* k2olog.c in Sources */ = {isa = PBXBuildFile; fileRef = CA3CB6E5084DE34E0021291F /* k2olog.c */; };
 		CA3BD1C00841D224009C738A /* k2orec.c in Sources */ = {isa = PBXBuildFile; fileRef = CA3BD16C0841C967009C738A /* k2orec.c */; };
 		CA3CB6E7084DE34E0021291F /* k2olog.c in Sources */ = {isa = PBXBuildFile; fileRef = CA3CB6E5084DE34E0021291F /* k2olog.c */; };
+		CAD5C58408D734BC00141903 /* k2odata.c in Sources */ = {isa = PBXBuildFile; fileRef = CAD5C58308D734BC00141903 /* k2odata.c */; };
+		CAD5C58508D734BC00141903 /* k2odata.c in Sources */ = {isa = PBXBuildFile; fileRef = CAD5C58308D734BC00141903 /* k2odata.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXBuildStyle section */
@@ -79,6 +81,7 @@
 		CA3CB6E5084DE34E0021291F /* k2olog.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = k2olog.c; sourceTree = "<group>"; };
 		CAD19E680842450800A1AE49 /* DEVEL.client */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text; path = DEVEL.client; sourceTree = "<group>"; };
 		CAD19EB908427FE000A1AE49 /* TODO.txt */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text; path = TODO.txt; sourceTree = "<group>"; };
+		CAD5C58308D734BC00141903 /* k2odata.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = k2odata.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -133,6 +136,7 @@
 				CA31B55C08337C1D00C0F4E2 /* k2oplay.c */,
 				CA3BD16C0841C967009C738A /* k2orec.c */,
 				CA3CB6E5084DE34E0021291F /* k2olog.c */,
+				CAD5C58308D734BC00141903 /* k2odata.c */,
 			);
 			path = src;
 			sourceTree = "<group>";
@@ -219,6 +223,7 @@
 			files = (
 				CA31B56308337C5000C0F4E2 /* k2oplay.c in Sources */,
 				CA3CB6E7084DE34E0021291F /* k2olog.c in Sources */,
+				CAD5C58408D734BC00141903 /* k2odata.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -228,6 +233,7 @@
 			files = (
 				CA3BD1C00841D224009C738A /* k2orec.c in Sources */,
 				CA336A780854EE6700D134ED /* k2olog.c in Sources */,
+				CAD5C58508D734BC00141903 /* k2odata.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
