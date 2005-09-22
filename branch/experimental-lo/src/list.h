@@ -131,7 +131,7 @@ void prefix##_list_push_front(prefix##_list* list, const type data) \
 { \
     prefix##_list_node* new_node = \
         (prefix##_list_node*)malloc(sizeof(prefix##_list_node)); \
-    new_node->data = data; \
+    new_node->data = (type)data; \
     new_node->next = list->first; \
     list->first = new_node; \
     if (list->last == NULL) \
@@ -143,7 +143,7 @@ void prefix##_list_push_back(prefix##_list* list, const type data) \
 { \
     prefix##_list_node* new_node = \
         (prefix##_list_node*)malloc(sizeof(prefix##_list_node)); \
-    new_node->data = data; \
+    new_node->data = (type)data; \
     new_node->next = NULL; \
     if (list->last == NULL) \
         list->first = new_node; \
@@ -157,7 +157,7 @@ void prefix##_list_add_after(prefix##_list* list, const prefix##_list_iterator i
 { \
     prefix##_list_node* new_node = \
         (prefix##_list_node*)malloc(sizeof(prefix##_list_node)); \
-    new_node->data = data; \
+    new_node->data = (type)data; \
     new_node->next = iter.current->next; \
     iter.current->next = new_node; \
     if (iter.current == list->last) \
@@ -169,7 +169,7 @@ void prefix##_list_add_before(prefix##_list* list, const prefix##_list_iterator 
 { \
     prefix##_list_node* new_node = \
         (prefix##_list_node*)malloc(sizeof(prefix##_list_node)); \
-    new_node->data = data; \
+    new_node->data = (type)data; \
     new_node->next = iter.current; \
     if (iter.prev == NULL) \
 	list->first = new_node; \

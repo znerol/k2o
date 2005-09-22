@@ -7,6 +7,7 @@
  *
  */
 
+#include <string.h>
 #include "k2odata.h"
 
 int hash_string(const char* str, const int hash_size)

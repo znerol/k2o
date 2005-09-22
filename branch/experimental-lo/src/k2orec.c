@@ -64,6 +64,8 @@ typedef struct k2oProtoField {
 } k2oProtoField;
 DECLARE_LIST(k2oProtoField*,field)
 DEFINE_LIST(k2oProtoField*,field)
+DECLARE_HASH(field, char*, k2oProtoField*)
+DEFINE_HASH(field, char*, k2oProtoField*, hash_string, string_equal)
 
 // message template structure
 typedef struct k2oMessageTemplate{
@@ -79,9 +81,10 @@ DEFINE_LIST(k2oMessageTemplate*,mesg)
 typedef struct k2oProtocol {
 	char		name[32];
 	char		pfx[64];		// the osc prefix
-	int			(*pfx_func)(struct k2oProtocol*, char**, int);		
+	int			(*pfx_func)(struct k2oProtocol*, char*, int);		
 								// this can also be a function (k2oProtocol,value string)
 	field_list	fields;			// fieldstruct
+	field_hash	prepared;		// prepared fields
 	mesg_list	messages;		// osctemplate
 } k2oProtocol;
 DECLARE_HASH(proto, char*, k2oProtocol*)
@@ -205,30 +208,40 @@ int kismetConnect (short int port, char *host)
     return 1;
 }
 
-int networkPrefix(k2oProtocol* proto, char** outPrefix, int outPrefixLength)
+int networkPrefix(k2oProtocol* proto, char* outPrefix, int outPrefixLength)
 {
-	k2oProtoField*	bssid = (k2oProtoField*)field_list_first_data(proto->fields);
+	k2oProtoField*	bssid = *field_list_first_data(proto->fields);
 	if (strncmp(bssid->name,"bssid",sizeof(bssid->name) - sizeof(char)) ||
 		bssid->value == NULL) {
 		WLOG("could not get contents of bssid field of network\n");
 		return -1;
 	}
 	
-	kismNetwork*	net = (kismNetwork*)net_hash_get(networkMap,bssid->value);
-	if(!net) {
+	kismNetwork*	net = NULL;
+	if(!net_hash_contains_key(networkMap,bssid->value)) {
+		// copy key (!!!)
+		char *key = calloc(1,strlen(bssid->value)+1);
+		strncpy(key,bssid->value,strlen(bssid->value)+1);
+		// prepare value
 		net = (kismNetwork*)calloc(1,sizeof(kismNetwork));
-		net_hash_set(&networkMap,bssid->value,net);
 		net->index = netcount;
+		net->clientCount = 0;
+		net->clientMap = client_hash_new();
+		// insert into hash and incrase netcount
+		net_hash_set(&networkMap,key,net);
 		netcount++;
 	}
-	return snprintf(*outPrefix, outPrefixLength,
-					"%s/network/%d", kismPrefixPath, net->index);
+	else {
+		net = *net_hash_get(networkMap,bssid->value);
+	}
+	return snprintf(outPrefix, outPrefixLength,
+					"%s/network/%d/", kismPrefixPath, net->index);
 }
 
-int clientPrefix(k2oProtocol* proto, char** outPrefix, int outPrefixLength)
+int clientPrefix(k2oProtocol* proto, char* outPrefix, int outPrefixLength)
 {
 	field_list_iterator fi = field_list_first(proto->fields);
-	k2oProtoField*	bssid = (k2oProtoField*)field_list_value(fi);
+	k2oProtoField*	bssid = *field_list_value(fi);
 	
 	if (strncmp(bssid->name,"bssid",sizeof(bssid->name) - sizeof(char)) ||
 		bssid->value == NULL) {
@@ -236,30 +249,193 @@ int clientPrefix(k2oProtocol* proto, char** outPrefix, int outPrefixLength)
 		return -1;
 	}
 	
-	kismNetwork*	net = (kismNetwork*)net_hash_get(networkMap,bssid->value);
-	if(!net) {
-		WLOG("could not get network for this bssid\n");
-		return -1;
+	kismNetwork*	net = NULL;
+	if(!net_hash_contains_key(networkMap,bssid->value)) {
+		return snprintf(outPrefix, outPrefixLength,
+						"%s/client/", kismPrefixPath);
 	}
+	net = *net_hash_get(networkMap,bssid->value);
 	
 	field_list_next(&fi);
-	k2oProtoField*	macaddr = (k2oProtoField*)field_list_value(fi);
-	kismClient*		client = (kismClient*)client_hash_get(net->clientMap,macaddr->value);
-	if (!client) {
+	k2oProtoField*	macaddr = *field_list_value(fi);
+	kismClient*		client = NULL;
+	if (!client_hash_contains_key(net->clientMap,macaddr->value)) {
+		// copy key (!!!)
+		char *key = calloc(1,strlen(macaddr->value)+1);
+		strncpy(key,macaddr->value,strlen(macaddr->value)+1);
+		// prepare value
 		client = (kismClient*)calloc(1,sizeof(kismClient));
-		client_hash_set(&net->clientMap,macaddr->value,client);
 		client->index = net->clientCount;
+		// insert client into hash and incrase count
+		client_hash_set(&net->clientMap,key,client);
 		net->clientCount++;
 	}
+	else {
+		client = *client_hash_get(net->clientMap,macaddr->value);
+	}
 	
-	return snprintf(*outPrefix, outPrefixLength,
-					"%s/network/%d/client/%d",
+	return snprintf(outPrefix, outPrefixLength,
+					"%s/network/%d/client/%d/",
 					kismPrefixPath, net->index, client->index);
 }
 
-int packetPrefix(k2oProtocol* proto, char** outPrefix, int outPrefixLength)
+int packetPrefix(k2oProtocol* proto, char* outPrefix, int outPrefixLength)
 {
-	return -1;
+	field_list_iterator fi = field_list_first(proto->fields);
+	k2oProtoField*	bssid = NULL;
+	
+	char*			netkey = NULL;
+	for( ; !field_list_done(fi); field_list_next(&fi)) {
+		bssid = *field_list_value(fi);
+		if (strncmp(bssid->name,"bssid",sizeof(bssid->name) - sizeof(char))) {
+			continue;
+		}
+		netkey = bssid->value;
+		break;
+	}
+	if (!netkey) {
+		return -1;
+	}
+	kismNetwork*	net = NULL;
+	if(!net_hash_contains_key(networkMap,netkey)) {
+		return snprintf(outPrefix, outPrefixLength,
+						"%s/packet/", kismPrefixPath);
+	}
+	else {
+		net = *net_hash_get(networkMap,netkey);
+		return snprintf(outPrefix, outPrefixLength,
+						"%s/network/%d/packet/",
+						kismPrefixPath, net->index);
+	}
+}
+
+int cardPrefix(k2oProtocol* proto, char* outPrefix, int outPrefixLength)
+{
+	field_list_iterator fi = field_list_first(proto->fields);
+	k2oProtoField*	cardid = NULL;
+	
+	char*			cid = "";
+	for( ; !field_list_done(fi); field_list_next(&fi)) {
+		cardid = *field_list_value(fi);
+		if (strncmp(cardid->name,"id",sizeof(cardid->name) - sizeof(char))) {
+			continue;
+		}
+		cid = cardid->value;
+		break;
+	}
+	return snprintf(outPrefix, outPrefixLength,
+						"%s/card/%s/",
+						kismPrefixPath, cid);
+}
+
+k2oProtocol* protocol(char* name)
+{
+	// get proto from protocol map structure if it's contained
+	k2oProtocol* proto = NULL;
+	if (proto_hash_contains_key(protocolMap,name)) {
+		proto = *proto_hash_get(protocolMap,name);
+		return proto;
+	}
+	
+	// create new protocol in protocol map otherwise
+	proto = (k2oProtocol*)calloc(1,sizeof(k2oProtocol));
+	strncpy(proto->name,name,sizeof(proto->name)-1);
+	proto_hash_set(&protocolMap,proto->name,proto);
+
+	if (!strncmp(proto->name, "NETWORK", 64)) {
+		proto->pfx_func = networkPrefix;
+	}
+	else if(!strncmp(proto->name, "CLIENT", 64)) {
+		proto->pfx_func = clientPrefix;
+	}
+	else if(!strncmp(proto->name, "PACKET", 64)) {
+		proto->pfx_func = packetPrefix;			
+	}
+	else if(!strncmp(proto->name, "CARD", 64)) {
+		proto->pfx_func = cardPrefix;
+	}
+	else {
+		snprintf(proto->pfx,64,"%s/%s/",kismPrefixPath,proto->name);
+		char* pfxname = &proto->pfx[strlen(kismPrefixPath)];
+		strtolow(&pfxname);
+	}
+	
+	// create protocol fields
+	proto->fields = field_list_new();
+	proto->messages = mesg_list_new();
+	proto->prepared = field_hash_new();
+	
+	return proto;
+}
+
+int
+addNewPreparedField(char* name, k2oMessageTemplate* t, k2oProtocol* p)
+{
+	k2oProtoField*	f = NULL;
+	if (field_hash_contains_key(p->prepared,name)) {
+		return -1;
+	}
+	
+	f = (k2oProtoField*)calloc(1,sizeof(k2oProtoField));
+	strncpy(f->name,name,sizeof(f->name)-1);
+	field_list_push_back(&t->fields,f);
+	field_hash_set(&p->prepared,f->name,f);
+	return 0;
+}
+
+k2oMessageTemplate*
+addNewTemplate(char* pfx,k2oProtocol* p)
+{
+	k2oMessageTemplate* t = NULL;
+	t = calloc(1,sizeof(k2oMessageTemplate));
+	strncpy(t->pfx,pfx,sizeof(t->pfx)-1);
+	t->fields = field_list_new();
+	mesg_list_push_back(&p->messages,t);
+	return t;
+}
+
+void prepareProtocolMap(void)
+{
+	protocolMap = proto_hash_new();
+	
+	k2oProtocol* p = NULL;
+	k2oMessageTemplate* t = NULL;
+	
+	// GPS
+	p = protocol("GPS");
+	
+	// message template for "/gps/pos fff lat lon alt"
+	t = addNewTemplate("gps",p);
+	addNewPreparedField("lat",t,p);
+	addNewPreparedField("lon",t,p);
+	addNewPreparedField("alt",t,p);
+		
+	// NETWORK
+	// message template for "/network/x/minpos fff lat lon alt"
+	p = protocol("NETWORK");
+	t = addNewTemplate("minpos",p);
+	addNewPreparedField("minlat",t,p);
+	addNewPreparedField("minlon",t,p);
+	addNewPreparedField("minalt",t,p);
+	
+	// message template for "/network/x/maxpos fff lat lon alt"
+	t = addNewTemplate("maxpos",p);
+	addNewPreparedField("maxlat",t,p);
+	addNewPreparedField("maxlon",t,p);
+	addNewPreparedField("maxalt",t,p);
+	
+	// message template for "/network/x/bestpos fff lat lon alt"
+	t = addNewTemplate("bestpos",p);
+	addNewPreparedField("bestlat",t,p);
+	addNewPreparedField("bestlon",t,p);
+	addNewPreparedField("bestalt",t,p);
+	
+	// message template for "/network/x/aggpos fffi lat lon alt points"
+	t = addNewTemplate("aggpos",p);
+	addNewPreparedField("agglat",t,p);
+	addNewPreparedField("agglon",t,p);
+	addNewPreparedField("aggalt",t,p);
+	addNewPreparedField("aggpoints",t,p);
 }
 
 int kismetPerformNetIO (void)
@@ -379,18 +555,13 @@ int kismetParse(const char* data) {
 		char *proto;
 		const char *sep = ",\n";
 
-		// clear old protocol hash
-		proto_hash_clear(&protocolMap);
-		
 		// list capabilities for each protocol
 		for (proto = strtok_r((char*)data+hdrlen, sep, &last);
 			 proto;
 			 proto = strtok_r(NULL, sep, &last))
 		{
 			// list capabilities if protocol is interesting
-			// if (findProtocol(proto)) {
-				kismetListCapability(proto);
-			// }
+			kismetListCapability(proto);
 		}
 	}
 	else if (!strncmp(header, "*CAPABILITY", 64)) {		
@@ -402,58 +573,51 @@ int kismetParse(const char* data) {
 		
 		char *flast, *field;
 		field = strtok_r(fields, " \n", &flast);
-		k2oProtocol* proto = (k2oProtocol*)calloc(1,sizeof(k2oProtocol));
-		strncpy(proto->name,field,sizeof(proto->name)-1);
 		
-		if (!strncmp(proto->name, "NETWORK", 64)) {
-			proto->pfx_func = networkPrefix;
-		}
-		else if(!strncmp(proto->name, "CLIENT", 64)) {
-			proto->pfx_func = clientPrefix;
-		}
-		else if(!strncmp(proto->name, "PACKET", 64)) {
-			proto->pfx_func = packetPrefix;			
-		}
-		else {
-			strtolow((char**)&proto->name);
-			snprintf(proto->pfx,64,"%s/%s",kismPrefixPath,proto->name);
-		}
-		
-		// create protocol fields
-		field_list	fieldList = field_list_new();
-		for (; field; field = strtok_r(NULL,",\n", &flast))
+		// get proto from protocol map structure if it's contained
+		k2oProtocol* proto = protocol(field);
+
+		// populate protocol field list
+		while((field = strtok_r(NULL,",\n", &flast)))
 		{
-			k2oProtoField* f = calloc(1,sizeof(k2oProtoField));
-			strncpy(f->name,field,sizeof(f->name)-1);
-			field_list_push_back(&fieldList,f);
+			k2oProtoField* f = NULL;
+			if(field_hash_contains_key(proto->prepared,field)) {
+				f = *field_hash_get(proto->prepared,field);
+			}
+			else {
+				f = calloc(1,sizeof(k2oProtoField));
+				strncpy(f->name,field,sizeof(f->name)-1);
+			}
+			field_list_push_back(&proto->fields,f);
 		}
-		proto->fields = fieldList;
 		
-		// create message templates
-		mesg_list	messageList = mesg_list_new();
-		
-		// just create a message for each field for now
-		field_list_iterator fi = field_list_first(fieldList);
+		// populate remaining message templates
+		field_list_iterator fi = field_list_first(proto->fields);
 		for( ; !field_list_done(fi); field_list_next(&fi)) {
-			k2oProtoField* f = (k2oProtoField*)field_list_value(fi);
+			k2oProtoField* f = *field_list_value(fi);
+			if (field_hash_contains_key(proto->prepared,f->name)) {
+				continue;
+			}
+			
 			k2oMessageTemplate* t = calloc(1,sizeof(k2oMessageTemplate));
 			strncpy(t->pfx,f->name,sizeof(t->pfx)-1);
 			t->fields = field_list_new();
 			field_list_push_back(&t->fields,f);
+			
+			mesg_list_push_back(&proto->messages,t);
 		}
 
-		proto->messages = messageList;
-
-		// enable this protocol
-		proto_hash_set(&protocolMap,proto->name,proto);
+		// enable the protocol
 		kismetEnableProtocol(proto->name);
 	}	
+	/*
 	else if (!strncmp(header, "*TIME", 64)) {
 		time_t	serv_time;
         if (sscanf(data+hdrlen, "%d\n", (int *) &serv_time) < 1)
             return 0;
 		
     }
+	*/
 	else if (!strncmp(header, "*STATUS", 64)) {
 		char status[1024];
         if (sscanf(data+hdrlen, "%1023[^\n]\n", status) != 1)
@@ -483,16 +647,17 @@ int kismetParse(const char* data) {
 		if(!nl) return 0;
 		
 		// check for the header without asterisk in the header map
-		k2oProtocol *proto = (k2oProtocol*)proto_hash_get(protocolMap, &header[1]);
-		if (!proto) {
+		if (!proto_hash_contains_key(protocolMap,&header[1])) {
 			return 0;
 		}
+		k2oProtocol *proto = *proto_hash_get(protocolMap, &header[1]);
 		
 		// iterate thru field list of protocol and fill message template buffers
 		field_list_iterator iter = field_list_first(proto->fields);
+		k2oProtoField* ff = NULL;
 		for( ; !field_list_done(iter); field_list_next(&iter)) {
-			k2oProtoField* f = (k2oProtoField*)field_list_value(iter);
-			f->value = propernextvaluetype(&fbuf,&f->type,1);
+			ff = *field_list_value(iter);
+			ff->value = propernextvaluetype(&fbuf,&ff->type,1);
 		}
 
 		// setup osc prefix path
@@ -501,12 +666,12 @@ int kismetParse(const char* data) {
 		// work and client messages
 		char*	pfx = "";
 		char	osc_pfx[64] = "";
-		if (proto->pfx) {
-			pfx = proto->pfx;
-		}
-		else if (proto->pfx_func) {
-			(proto->pfx_func)(proto,(char**)&osc_pfx,sizeof(osc_pfx)-sizeof(char));
+		if (proto->pfx_func != NULL) {
+			(proto->pfx_func)(proto,osc_pfx,sizeof(osc_pfx)-sizeof(char));
 			pfx = osc_pfx;
+		}
+		else {
+			pfx = proto->pfx;
 		}
 				
 		// calculate timestamp
@@ -518,24 +683,24 @@ int kismetParse(const char* data) {
 		mesg_list_iterator ti = mesg_list_first(proto->messages);
 		for( ; !mesg_list_done(ti); mesg_list_next(&ti))
 		{
-			k2oMessageTemplate* t = (k2oMessageTemplate*)mesg_list_value(ti);
+			k2oMessageTemplate* t = *mesg_list_value(ti);
 			
 			// setup type string if nessesary
 			if (!t->types_set) {
 				int i = 0;
 				LIST_ITERATE(field, t->fields, f,
-					t->types[i] = ((k2oProtoField*)field_list_value(f))->type;
+					t->types[i] = (*field_list_value(f))->type;
 					i++;
 				)
 				t->types[i] = '\0';
 			}
 			
 			// print osc prefix and types
-			printf("%f %s/%s %s",dt,pfx,t->pfx,t->types);
+			printf("%f %s%s %s",dt,pfx,t->pfx,t->types);
 			
 			// iterate thru buffers
 			LIST_ITERATE(field, t->fields, f,
-				printf(" %s",((k2oProtoField*)field_list_value(f))->value);
+				printf(" %s",(*field_list_value(f))->value);
 			)
 			printf("\n");
 		}
@@ -734,6 +899,12 @@ int main (int argc, char **argv)
 	// this command takes not command beside the options
 	if(argc != optind)
 		usage(argv[0]);
+	
+	// initialize global lists and hashes
+	prepareProtocolMap();
+	//protocolMap = proto_hash_new();
+	networkMap = net_hash_new();
+	
 	
 	// create server connection and wait for startup
 	int err = kismetConnect(kismetport,kismethost);
