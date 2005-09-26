@@ -14,6 +14,6 @@ bin_PROGRAMS	 = k2orec k2oplay
 AM_LIBS          = @PTHREAD_LIBS@
 AM_CFLAGS        = @PTHREAD_CFLAGS@
 
-k2orec_SOURCES	 = k2orec.cpp k2olog.c
+k2orec_SOURCES	 = k2orec.cpp k2olog.c k2odata.c
 
-k2oplay_SOURCES	 = k2oplay.c k2olog.c
+k2oplay_SOURCES	 = k2oplay.c k2olog.c k2odata.c

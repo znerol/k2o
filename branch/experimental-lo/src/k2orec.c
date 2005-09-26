@@ -111,6 +111,14 @@ int				netcount = 0;
 void** kismNetworks = NULL;
 void** kismClients = NULL;
 
+// osc targets
+#define maxotargets 10
+int ocount = 0;
+lo_address	otargets[maxotargets];
+
+// outfile
+FILE* outputfile =  NULL;
+
 struct timeval	startTime;
 
 void usage(char *executable);
@@ -134,13 +142,16 @@ double timeval_diff(struct timeval a, struct timeval b)
 }
 
 void usage(char *executable){
-	printf("Usage: %s [OPTION] > somefile.txt\n", executable);
-	printf("\n"
+	fprintf(stderr,"Usage: %s [OPTION]\n", executable);
+	fprintf(stderr,"\n"
 " connects to a kismet_server and writes osc messages to stdout.\n\n"
 " Options:\n"
 " -k, --kismethost   <host:port> address and tcp port of kismet server. default\n"
 "                    is localhost:2501\n"
 " -f, --prefix       prefix path for received messages. standard is %s.\n"
+" -o, --outfile      specify file to write osc messages to. use \"-\" for stdout\n"
+" -t, --target       specify a target to send osc messages to it. multiple targets\n"
+"                    are allowed\n"
 " -d, --debug        set debug level to 0-%d. default is %d.\n"
 " -v, --version      version information\n"
 " -h, --help\n", kismPrefixPath, kLogNumLevels-1, gLogLevel);
@@ -328,6 +339,7 @@ int cardPrefix(k2oProtocol* proto, char* outPrefix, int outPrefixLength)
 						kismPrefixPath, cid);
 }
 
+
 k2oProtocol* protocol(char* name)
 {
 	// get proto from protocol map structure if it's contained
@@ -366,6 +378,152 @@ k2oProtocol* protocol(char* name)
 	proto->prepared = field_hash_new();
 	
 	return proto;
+}
+
+void outputProtocolData(char* protocol,char* fieldbuffer)
+{
+	// check for the header without asterisk in the header map
+	if (!proto_hash_contains_key(protocolMap,protocol)) {
+		return;
+	}
+	k2oProtocol *proto = *proto_hash_get(protocolMap, protocol);
+	
+	// iterate thru field list of protocol and fill message template buffers
+	field_list_iterator iter = field_list_first(proto->fields);
+	k2oProtoField* ff = NULL;
+	for( ; !field_list_done(iter); field_list_next(&iter)) {
+		ff = *field_list_value(iter);
+		ff->value = propernextvaluetype(&fieldbuffer,&ff->type,1);
+	}
+
+	// setup osc prefix path
+	// this will either grab the value stored in a string member or compute
+	// it with a function. e.g. for retreiving the correct value for net-
+	// work and client messages
+	char*	pfx = "";
+	char	osc_pfx[64] = "";
+	if (proto->pfx_func != NULL) {
+		(proto->pfx_func)(proto,osc_pfx,sizeof(osc_pfx)-sizeof(char));
+		pfx = osc_pfx;
+	}
+	else {
+		pfx = proto->pfx;
+	}
+			
+	// calculate timestamp
+	struct timeval now;
+	gettimeofday(&now,NULL);
+	double dt = timeval_diff(now,startTime);
+
+	// iterate thru message templates and output them
+	mesg_list_iterator ti = mesg_list_first(proto->messages);
+	for( ; !mesg_list_done(ti); mesg_list_next(&ti))
+	{
+		k2oMessageTemplate* t = *mesg_list_value(ti);
+		
+		// setup type string if nessesary
+		if (!t->types_set) {
+			int i = 0;
+			LIST_ITERATE(field, t->fields, f,
+				t->types[i] = (*field_list_value(f))->type;
+				i++;
+			)
+			t->types[i] = '\0';
+		}
+		
+		char	pathprefix[128];
+		strncpy(pathprefix,pfx,sizeof(pathprefix)-1);
+		strncat(pathprefix,t->pfx,sizeof(pathprefix)-strlen(pathprefix));
+
+		// iterate thru messages and output them to osc destinations
+		if(ocount != 0) {
+			lo_message*	m = NULL;
+			m = lo_message_new();
+			char* valstr = NULL;
+			LIST_ITERATE(field, t->fields, f,
+				valstr = (*field_list_value(f))->value;
+				switch((*field_list_value(f))->type) {
+					case LO_INT32:
+					{
+						int		v = (int)strtol(valstr,NULL,0);
+						lo_message_add_int32(m,v);
+						break;
+					}
+					case LO_FLOAT:
+					{
+						float	f = (float)strtod(valstr,NULL);
+						lo_message_add_float(m,f);
+						break;
+					}
+					case LO_STRING:
+						lo_message_add_string(m,valstr);
+						break;
+				}
+			)
+			int i;
+			for(i = 0 ; i < ocount ; i++) {
+				DLOG("sending message %s",pathprefix);
+				int ret = lo_send_message(otargets[i], pathprefix, m);
+				if(ret < 0) {
+					ELOG("%d, %s",ret,lo_address_errstr(otargets[i]));
+				}
+			}
+			lo_message_free(m);
+		}
+		
+		// print osc prefix and types
+		if(outputfile) {
+			fprintf(outputfile,"%f %s %s",dt,pathprefix,t->types);
+		
+			// iterate thru buffers
+			LIST_ITERATE(field, t->fields, f,
+				fprintf(outputfile," %s",(*field_list_value(f))->value);
+			)
+			fprintf(outputfile,"\n");
+		}
+	}
+}
+
+void setupCapability(char* fieldbuffer)
+{
+	char *flast, *field;
+	field = strtok_r(fieldbuffer, " \n", &flast);
+	
+	// get proto from protocol map structure if it's contained
+	k2oProtocol* proto = protocol(field);
+
+	// populate protocol field list
+	while((field = strtok_r(NULL,",\n", &flast)))
+	{
+		k2oProtoField* f = NULL;
+		if(field_hash_contains_key(proto->prepared,field)) {
+			f = *field_hash_get(proto->prepared,field);
+		}
+		else {
+			f = calloc(1,sizeof(k2oProtoField));
+			strncpy(f->name,field,sizeof(f->name)-1);
+		}
+		field_list_push_back(&proto->fields,f);
+	}
+	
+	// populate remaining message templates
+	field_list_iterator fi = field_list_first(proto->fields);
+	for( ; !field_list_done(fi); field_list_next(&fi)) {
+		k2oProtoField* f = *field_list_value(fi);
+		if (field_hash_contains_key(proto->prepared,f->name)) {
+			continue;
+		}
+		
+		k2oMessageTemplate* t = calloc(1,sizeof(k2oMessageTemplate));
+		strncpy(t->pfx,f->name,sizeof(t->pfx)-1);
+		t->fields = field_list_new();
+		field_list_push_back(&t->fields,f);
+		
+		mesg_list_push_back(&proto->messages,t);
+	}
+
+	// enable the protocol
+	kismetEnableProtocol(proto->name);
 }
 
 int
@@ -566,49 +724,12 @@ int kismetParse(const char* data) {
 	}
 	else if (!strncmp(header, "*CAPABILITY", 64)) {		
 		// return if we don't have a complete line
-		char *fields = (char*)data+hdrlen;
-		char* nl = strchr(fields,'\n');
+		char *fbuf = (char*)data+hdrlen;
+		char* nl = strchr(fbuf,'\n');
 		if(!nl)
 			return 0;
 		
-		char *flast, *field;
-		field = strtok_r(fields, " \n", &flast);
-		
-		// get proto from protocol map structure if it's contained
-		k2oProtocol* proto = protocol(field);
-
-		// populate protocol field list
-		while((field = strtok_r(NULL,",\n", &flast)))
-		{
-			k2oProtoField* f = NULL;
-			if(field_hash_contains_key(proto->prepared,field)) {
-				f = *field_hash_get(proto->prepared,field);
-			}
-			else {
-				f = calloc(1,sizeof(k2oProtoField));
-				strncpy(f->name,field,sizeof(f->name)-1);
-			}
-			field_list_push_back(&proto->fields,f);
-		}
-		
-		// populate remaining message templates
-		field_list_iterator fi = field_list_first(proto->fields);
-		for( ; !field_list_done(fi); field_list_next(&fi)) {
-			k2oProtoField* f = *field_list_value(fi);
-			if (field_hash_contains_key(proto->prepared,f->name)) {
-				continue;
-			}
-			
-			k2oMessageTemplate* t = calloc(1,sizeof(k2oMessageTemplate));
-			strncpy(t->pfx,f->name,sizeof(t->pfx)-1);
-			t->fields = field_list_new();
-			field_list_push_back(&t->fields,f);
-			
-			mesg_list_push_back(&proto->messages,t);
-		}
-
-		// enable the protocol
-		kismetEnableProtocol(proto->name);
+		setupCapability(fbuf);
 	}	
 	/*
 	else if (!strncmp(header, "*TIME", 64)) {
@@ -643,67 +764,11 @@ int kismetParse(const char* data) {
 	else {
 		// return if line is not complete
 		char* fbuf = (char*)data+hdrlen;
-		char* nl = strchr((char*)data+hdrlen,'\n');
+		char* nl = strchr((char*)fbuf,'\n');
 		if(!nl) return 0;
 		
-		// check for the header without asterisk in the header map
-		if (!proto_hash_contains_key(protocolMap,&header[1])) {
-			return 0;
-		}
-		k2oProtocol *proto = *proto_hash_get(protocolMap, &header[1]);
-		
-		// iterate thru field list of protocol and fill message template buffers
-		field_list_iterator iter = field_list_first(proto->fields);
-		k2oProtoField* ff = NULL;
-		for( ; !field_list_done(iter); field_list_next(&iter)) {
-			ff = *field_list_value(iter);
-			ff->value = propernextvaluetype(&fbuf,&ff->type,1);
-		}
-
-		// setup osc prefix path
-		// this will either grab the value stored in a string member or compute
-		// it with a function. e.g. for retreiving the correct value for net-
-		// work and client messages
-		char*	pfx = "";
-		char	osc_pfx[64] = "";
-		if (proto->pfx_func != NULL) {
-			(proto->pfx_func)(proto,osc_pfx,sizeof(osc_pfx)-sizeof(char));
-			pfx = osc_pfx;
-		}
-		else {
-			pfx = proto->pfx;
-		}
-				
-		// calculate timestamp
-		struct timeval now;
-		gettimeofday(&now,NULL);
-		double dt = timeval_diff(now,startTime);
-
-		// iterate thru message templates and output them
-		mesg_list_iterator ti = mesg_list_first(proto->messages);
-		for( ; !mesg_list_done(ti); mesg_list_next(&ti))
-		{
-			k2oMessageTemplate* t = *mesg_list_value(ti);
-			
-			// setup type string if nessesary
-			if (!t->types_set) {
-				int i = 0;
-				LIST_ITERATE(field, t->fields, f,
-					t->types[i] = (*field_list_value(f))->type;
-					i++;
-				)
-				t->types[i] = '\0';
-			}
-			
-			// print osc prefix and types
-			printf("%f %s%s %s",dt,pfx,t->pfx,t->types);
-			
-			// iterate thru buffers
-			LIST_ITERATE(field, t->fields, f,
-				printf(" %s",(*field_list_value(f))->value);
-			)
-			printf("\n");
-		}
+		// output protocol data to desired destinations
+		outputProtocolData(&header[1],fbuf);
     }	
 
     return 1;
@@ -827,6 +892,8 @@ int main (int argc, char **argv)
 	{ "kismethost",	required_argument, 0, 'k' },
 	{ "debug",	required_argument, 0, 'd' },
 	{ "prefix",	required_argument, 0, 'f' },
+	{ "target",	required_argument, 0, 't' },
+	{ "outfile", required_argument, 0, 'o' },
 	{ "version", no_argument, 0, 'v' },
 	{ "help", no_argument, 0, 'h' },
 	{ 0, 0, 0, 0 }
@@ -843,7 +910,7 @@ int main (int argc, char **argv)
 		/* getopt_long stores the option index here. */
 		int option_index = 0;
 		
-		int c = getopt_long (argc, argv, "k:d:f:", long_options, &option_index);
+		int c = getopt_long (argc, argv, "k:d:f:t:o:", long_options, &option_index);
 		
 		/* Detect the end of the options. */
 		if (c == -1)
@@ -885,6 +952,42 @@ int main (int argc, char **argv)
 				break;
 			}
 			
+			case 't':
+			{
+				// add an osc target
+				if (ocount < maxotargets && optarg && optarg[0]) {
+					otargets[ocount] = lo_address_new_from_url(optarg);
+					if(!otargets[ocount]) {
+						ELOG("failed to setup target for %s", optarg);
+						catchTerm(-1);
+					}
+					ILOG("setup target for %s", optarg);
+					ocount++;
+				}
+				break;
+			}
+			
+			case 'o':
+			{
+				// open outputfile. use - for stdout
+				if (optarg && optarg[0]) {
+					if(optarg[0] == '-') {
+						outputfile = stderr;
+						ILOG("output will go to stdout");
+					}
+					else {
+						outputfile = fopen(optarg,"w");
+						if(outputfile == NULL) {
+							ELOG("failed to open outpu file %s: %s (%d)",
+								optarg,strerror(errno),errno);
+							catchTerm(-1);
+						}
+						ILOG("opened output file %s", optarg);
+					}
+				}
+				break;
+			}
+			
 			case 'h':
 			case '?':
 				usage(argv[0]);
@@ -900,11 +1003,16 @@ int main (int argc, char **argv)
 	if(argc != optind)
 		usage(argv[0]);
 	
+	// sanity check arguments
+	if (outputfile == NULL && ocount == 0) {
+		ELOG("you did not specify any output method!");
+		usage(argv[0]);
+	}
+	
 	// initialize global lists and hashes
 	prepareProtocolMap();
 	//protocolMap = proto_hash_new();
 	networkMap = net_hash_new();
-	
 	
 	// create server connection and wait for startup
 	int err = kismetConnect(kismetport,kismethost);
