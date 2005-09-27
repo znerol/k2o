@@ -399,7 +399,7 @@ void outputProtocolData(char* protocol,char* fieldbuffer)
 	// setup osc prefix path
 	// this will either grab the value stored in a string member or compute
 	// it with a function. e.g. for retreiving the correct value for net-
-	// work and client messages
+	// work, packet, card and client messages
 	char*	pfx = "";
 	char	osc_pfx[64] = "";
 	if (proto->pfx_func != NULL) {
@@ -563,7 +563,7 @@ void prepareProtocolMap(void)
 	p = protocol("GPS");
 	
 	// message template for "/gps/pos fff lat lon alt"
-	t = addNewTemplate("gps",p);
+	t = addNewTemplate("pos",p);
 	addNewPreparedField("lat",t,p);
 	addNewPreparedField("lon",t,p);
 	addNewPreparedField("alt",t,p);
@@ -594,6 +594,84 @@ void prepareProtocolMap(void)
 	addNewPreparedField("agglon",t,p);
 	addNewPreparedField("aggalt",t,p);
 	addNewPreparedField("aggpoints",t,p);
+	
+	// message templates for packet counters
+	t = addNewTemplate("packets/data",p);
+	addNewPreparedField("datapackets",t,p);
+	t = addNewTemplate("packets/llc",p);
+	addNewPreparedField("llcpackets",t,p);
+	t = addNewTemplate("packets/crypt",p);
+	addNewPreparedField("cryptpackets",t,p);
+	t = addNewTemplate("packets/weak",p);
+	addNewPreparedField("weakpackets",t,p);
+	t = addNewTemplate("packets/dupeiv",p);
+	addNewPreparedField("dupeivpackets",t,p);
+	
+	// message templates for signal meter
+	t = addNewTemplate("signal/quality",p);
+	addNewPreparedField("quality",t,p);
+	t = addNewTemplate("signal/power",p);
+	addNewPreparedField("signal",t,p);
+	t = addNewTemplate("signal/noise",p);
+	addNewPreparedField("noise",t,p);
+	t = addNewTemplate("bestsignal/quality",p);
+	addNewPreparedField("bestquality",t,p);
+	t = addNewTemplate("bestsignal/power",p);
+	addNewPreparedField("bestsignal",t,p);
+	t = addNewTemplate("bestsignal/noise",p);
+	addNewPreparedField("bestnoise",t,p);
+	
+	// same for CLIENT here
+	// message template for "/client/x/minpos fff lat lon alt"
+	p = protocol("CLIENT");
+	t = addNewTemplate("minpos",p);
+	addNewPreparedField("minlat",t,p);
+	addNewPreparedField("minlon",t,p);
+	addNewPreparedField("minalt",t,p);
+	
+	// message template for "/client/x/maxpos fff lat lon alt"
+	t = addNewTemplate("maxpos",p);
+	addNewPreparedField("maxlat",t,p);
+	addNewPreparedField("maxlon",t,p);
+	addNewPreparedField("maxalt",t,p);
+	
+	// message template for "/client/x/bestpos fff lat lon alt"
+	t = addNewTemplate("bestpos",p);
+	addNewPreparedField("bestlat",t,p);
+	addNewPreparedField("bestlon",t,p);
+	addNewPreparedField("bestalt",t,p);
+	
+	// message template for "/client/x/aggpos fffi lat lon alt points"
+	t = addNewTemplate("aggpos",p);
+	addNewPreparedField("agglat",t,p);
+	addNewPreparedField("agglon",t,p);
+	addNewPreparedField("aggalt",t,p);
+	addNewPreparedField("aggpoints",t,p);
+	
+	// message templates for packet counters
+	t = addNewTemplate("packets/data",p);
+	addNewPreparedField("datapackets",t,p);
+	// no llc counter for client
+	t = addNewTemplate("packets/crypt",p);
+	addNewPreparedField("cryptpackets",t,p);
+	t = addNewTemplate("packets/weak",p);
+	addNewPreparedField("weakpackets",t,p);
+	// no dupeiv for client
+	
+	// message templates for signal meter
+	t = addNewTemplate("signal/quality",p);
+	addNewPreparedField("quality",t,p);
+	t = addNewTemplate("signal/power",p);
+	addNewPreparedField("signal",t,p);
+	t = addNewTemplate("signal/noise",p);
+	addNewPreparedField("noise",t,p);
+	t = addNewTemplate("bestsignal/quality",p);
+	addNewPreparedField("bestquality",t,p);
+	t = addNewTemplate("bestsignal/power",p);
+	addNewPreparedField("bestsignal",t,p);
+	t = addNewTemplate("bestsignal/noise",p);
+	addNewPreparedField("bestnoise",t,p);
+	
 }
 
 int kismetPerformNetIO (void)
@@ -838,8 +916,10 @@ char* propernextvaluetype(char** ctx, char* type, int addNullChar)
 				break;
 				
 			case ' ':
+			case '\n':
 				if(!quoted) {
-					// close string and break if we found an unqouted space
+					// close string and break if we found an unqouted space or 
+					// newline
 					if (addNullChar) {
 						*fchar = '\0';
 					}
