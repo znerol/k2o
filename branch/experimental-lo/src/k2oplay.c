@@ -54,11 +54,21 @@ char pfxpath[255] = "/kismet";
 
 pthread_mutex_t	schedulerMutex;
 pthread_cond_t	rescheduleCondVar;
-double			rate = 1.0;
-int				follow = 1;
-int				loop = 0;
+double			rate = 1.0;		// play rate. 1.0 = normal forward. changable at
+								// runtime.
+int				follow = 0;		// follow the input greedily. changeable at run-
+								// time.
+int				loop = 0;		// wrap around to beginning/end of file. change-
+								// able at runtime.
+int				rewindable = 0;	// if this is set messages are discarded once
+								// they are played. unchangeble at runtime.
+int				lookahead = 512;// how many rows the fileread thread will look
+								// ahead.
 
-struct timespec		lasttime, lastpos = {0,0}, curpos = {0,0};
+struct timespec	lasttime, lastpos = {0,0}, curpos = {0,0};
+int				currentline = 0;// position of last sendt message in the file.
+								// used and shared with file index thread.
+pthread_cond_t	lineSendtCondVar;
 
 pthread_cond_t	mchainCondVar;
 timedMessage*	mchain = NULL;
@@ -97,10 +107,11 @@ fileIndexThreadEntry()
 	char		lastLine[1024];
 	int			c = 0;
 	int			cpos = 0;
+	int			lpos = 0;
 	timedMessage*	tm = NULL;
 	
 	// path hash table
-	str_str_hash	pathmap = str_str_hash_new();
+	//str_str_hash	pathmap = str_str_hash_new();
 	
 	ILOG("started filereader");
 	while(1) {
@@ -113,7 +124,7 @@ fileIndexThreadEntry()
 			}
 			if(cpos == 1023) {
 				// FIXME: better error handlin here
-				return;
+				pthread_exit(NULL);
 			}
 			lastLine[cpos] = c;
 			
@@ -133,78 +144,84 @@ fileIndexThreadEntry()
 				tm->time.tv_nsec = modf(strtod(timestr,NULL),&tsec) * NANO;
 				tm->time.tv_sec = tsec;
 				
-				// read path
+				// copy path
 				char *path = strtok_r(NULL, " ", &ctx);
-				char **entryptr = str_str_hash_get(pathmap, path);
-				char *entry = NULL;
-				if(!entryptr) {
-					entry = (char*)malloc((strlen(path) + 1)*sizeof(char));
-					strcpy(entry, path);
-					str_str_hash_set(&pathmap, entry, entry);
-				}
-				else {
-					entry = (*entryptr);
-				}
-				tm->path = entry;
 				
-				// read values
-				int i;
-				char *types = strtok_r(NULL, " ", &ctx);
-				char *valstr;
-
-				for(i=0; (valstr = strtok_r(NULL, " ", &ctx)) != NULL; i++) {
-					if(!valstr[0])
-						// ignore empty fields
-						continue;
+				// continue if data is complete
+				if(path) {
+					size_t slen = strlen(path) + 1;
+					tm->path = (char*)calloc(1,slen * sizeof(char));
+					strncpy(tm->path, path, slen-1);
 					
-					switch(types[i]) {
-						case LO_INT32:
-						{
-							int		v = (int)strtol(valstr,NULL,0);
-							lo_message_add_int32(tm->msg,v);
-							break;
+					if(ctx) {
+					// read arguments
+					int i;
+					char *types = strtok_r(NULL, " ", &ctx);
+					char *valstr;
+
+					for(i=0; (valstr = strtok_r(NULL, " ", &ctx)) != NULL && types[i] != 0; i++) {
+						if(!valstr[0])
+							// ignore empty fields
+							continue;
+						
+						switch(types[i]) {
+							case LO_INT32:
+							{
+								int		v = (int)strtol(valstr,NULL,0);
+								lo_message_add_int32(tm->msg,v);
+								break;
+							}
+								
+							case LO_FLOAT:
+							{
+								float	f = (float)strtod(valstr,NULL);
+								lo_message_add_float(tm->msg,f);
+								break;
+							}
+								
+							case LO_STRING:
+								lo_message_add_string(tm->msg,valstr);
+								break;
+								
+							default:
+								WLOG("osc type not supported %x",types[i]);
+								// FIXME: only int, float and string types are supported
+								break;
 						}
-							
-						case LO_FLOAT:
-						{
-							float	f = (float)strtod(valstr,NULL);
-							lo_message_add_float(tm->msg,f);
-							break;
-						}
-							
-						case LO_STRING:
-							lo_message_add_string(tm->msg,valstr);
-							break;
-							
-						default:
-							// FIXME: only int, float and string types are supported
-							break;
 					}
+					}
+					
+					tm->next = NULL;
+					
+					// add message to chain
+					pthread_mutex_lock(&schedulerMutex);
+					DLOG1("filereader thread locked");
+					
+					tm->prev = mlast;
+					
+					if(mlast) {
+						mlast->next = tm;
+					}
+					
+					// incrase line number.
+					lpos++;
+					
+					// first message
+					if(!mchain) {
+						mchain = tm;
+						pthread_cond_signal(&mchainCondVar);
+					}
+					mlast = tm;
+					pthread_cond_signal(&rescheduleCondVar);
+					
+					// wait here if we have enough messages in buffer
+					while (!follow && lpos > currentline + lookahead ) {
+						pthread_cond_wait(&lineSendtCondVar,&schedulerMutex);
+					}
+					pthread_mutex_unlock(&schedulerMutex);
+					DLOG1("filereader thread unlocked");
+					
 				}
-				
-				tm->next = NULL;
-				
-				// add message to chain
-				pthread_mutex_lock(&schedulerMutex);
-				DLOG1("filereader thread locked");
-				
-				tm->prev = mlast;
-				
-				if(mlast) {
-					mlast->next = tm;
-				}
-				
-				// first message
-				if(!mchain) {
-					mchain = tm;
-					pthread_cond_signal(&mchainCondVar);
-				}
-				mlast = tm;
-				pthread_cond_signal(&rescheduleCondVar);
-				
-				pthread_mutex_unlock(&schedulerMutex);
-				DLOG1("filereader thread unlocked");
-				
 				cpos = 0;
 			}
 			cpos++;
@@ -212,7 +229,16 @@ fileIndexThreadEntry()
 		funlockfile(infd);
 		
 		if(feof(infd)) {
+			// clear eof err
 			clearerr(infd);
+
+			// wrap around if we aren't rewindable (lowmem) and looping is enabled
+			if(rewindable && loop) {
+				mchain = NULL;
+				rewind(infd);
+				// FIXME: check errno here
+			}
+			
 			// sleep shortly (one millisecond) so we don't eat the whole cpu. 
 			usleep(1000);
 		}
@@ -230,14 +256,20 @@ int setRateHandler(const char *path, const char *types, lo_arg **argv, int argc,
 {
 	if (types[0] == LO_FLOAT) {
 		pthread_mutex_lock(&schedulerMutex);
-		lastpos = curpos;
-		timespec_now(&lasttime);
-		follow = 0;
-		rate = argv[0]->f;
-		pthread_cond_signal(&rescheduleCondVar);
-		ILOG("rate set to %f",rate);
+		if (!rewindable && argv[0]->f < 0.0) {
+			ELOG("cannot set rate to negative value if not startet in rewindable mode.");
+		}
+		else {
+			lastpos = curpos;
+			timespec_now(&lasttime);
+			follow = 0;
+			rate = argv[0]->f;
+			pthread_cond_signal(&rescheduleCondVar);
+			ILOG("rate set to %f",rate);
+		}
 		pthread_mutex_unlock(&schedulerMutex);
 	}
+	return 0;
 }
 
 int setPosHandler(const char *path, const char *types, lo_arg **argv, int argc,
@@ -249,6 +281,7 @@ int setPosHandler(const char *path, const char *types, lo_arg **argv, int argc,
 	WLOG("setpos not implemented yet");
 
 	// pthread_mutex_unlock(&schedulerMutex);
+	return 0;
 }
 
 void catchTerm(int sig) {
@@ -258,7 +291,9 @@ void catchTerm(int sig) {
 
 	pthread_cond_destroy(&mchainCondVar);
 	
-	lo_server_thread_stop(oscServerThread);
+	if (oscServerThread) {
+		lo_server_thread_stop(oscServerThread);
+	}
 	exit(sig);
 }
 
@@ -273,6 +308,7 @@ void usage(char *executable){
 " -r, --rate         start in replay mode and set rate. if no rate is given 1.0\n"
 "                    is used\n"
 " -l, --loop         loop the sequence.\n"
+" -w, --rewindable   allow rewinds and hold data in memory. expensive!\n"
 " -f, --prefix       prefix path for received messages. standard is %s.\n"
 " -d, --debug        set debug level to 0-%d. default is %d.\n"
 " -v, --version      version information\n"
@@ -292,6 +328,7 @@ main (int argc, char **argv)
 	{ "rate",	optional_argument, 0, 'r' },
 	{ "debug",	required_argument, 0, 'd' },
 	{ "loop",	no_argument, 0, 'l' },
+	{ "rewindable",	no_argument, 0, 'w' },
 	{ "prefix",	required_argument, 0, 'f' },
 	{ "version", no_argument, 0, 'v' },
 	{ "help", no_argument, 0, 'h' },
@@ -309,7 +346,7 @@ main (int argc, char **argv)
 		/* getopt_long stores the option index here. */
 		int option_index = 0;
 		
-		int c = getopt_long (argc, argv, "vhlp:r:d:f:", long_options, &option_index);
+		int c = getopt_long (argc, argv, "vhlwp:r:d:f:", long_options, &option_index);
 		
 		/* Detect the end of the options. */
 		if (c == -1)
@@ -357,6 +394,14 @@ main (int argc, char **argv)
 			{
 				loop=1;
 				DLOG("turned looping on");
+				break;
+			}
+			
+			case 'w':
+			{
+				rewindable=1;
+				DLOG("turned rewindable mode on THIS WILL EAT MUCH MEMORY.");
+				break;
 			}
 
 			case 'h':
@@ -373,6 +418,7 @@ main (int argc, char **argv)
 	// check the arguments
 	if (follow && loop) {
 		ELOG("sorry, can't loop a file in follow mode");
+		catchTerm(0);
 	}
 	
 	// if we don't have minimum 2 more arguments, something is wrong
@@ -430,6 +476,7 @@ main (int argc, char **argv)
 	// detach filereader thread
 //	err = pthread_mutex_init(&mchainMutex, NULL);
 	err = pthread_cond_init(&mchainCondVar, NULL);
+	err = pthread_cond_init(&lineSendtCondVar, NULL);
 	err = pthread_create(&fileIndexThread, NULL, &fileIndexThreadEntry, NULL);
 	
 	// current and last sendt message
@@ -586,23 +633,41 @@ main (int argc, char **argv)
 		// send message if state is 0 (sendable)
 		if(state == 0) {
 			for(i = 0 ; i < ocount ; i++) {
-				DLOG("sending message %s",mcurrent->path);
+				DLOG("sending message line %d, %s",currentline,mcurrent->path);
 				int ret = lo_send_message(otargets[i], mcurrent->path, mcurrent->msg);
 				if(ret < 0) {
 					ELOG("%d, %s",ret,lo_address_errstr(otargets[i]));
 				}
 			}
+			currentline++;
+			// signal that we have moved forward one line.
+			pthread_cond_signal(&lineSendtCondVar);
 			state = 1;
 		}
 		
 		// move to next unsent message if we are moving. it's possible that we
 		// can't move to the next message because we are at the beginning or the
-		// end of the queue. in this case the state is left to 1, so we can this
-		// after a conditional variable was signaled above.
+		// end of the queue. in this case the state is left to 1, so we can do 
+		// this after a conditional variable was signaled above.
 		pthread_mutex_lock(&schedulerMutex);
 		DLOG1("scheduler thread locked");
 		if(state == 1 && nmsg) {
+			// move to next message and probably forget sendt message
+			timedMessage*	oldmsg = mcurrent;
 			mcurrent = nmsg;
+			
+			// forget message if we are not revindable and we are moving fwd.
+			if (!rewindable && rate > 0.0) {
+				// free memory
+				free(oldmsg->path);
+				lo_message_free(oldmsg->msg);
+				free(oldmsg);
+				
+				// disconnect from current
+				mcurrent->prev = NULL;
+			}
+			
+			// current message is ready to be sendt
 			state = 0;
 		}
 		pthread_mutex_unlock(&schedulerMutex);
