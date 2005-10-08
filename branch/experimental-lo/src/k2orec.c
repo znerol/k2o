@@ -33,6 +33,7 @@
 #include <getopt.h>
 #include <limits.h>
 #include <ctype.h>
+#include <math.h>
 
 #include <lo/lo.h>
 
@@ -583,7 +584,7 @@ localPosition(k2oProtocol* proto, k2oProtoField* field)
 	// calculate local distance, angle and relative position to viewer (gps).
 	a = heading;
 	y = (agglat/aggpts - lat) * ue * cos(a);
-	x = (agglon/aggpts - lon) * ue * cos(lat*torad) * -sin(a);
+	x = (agglon/aggpts - lon) * ue * cos(lat*torad) * sin(a);
 	d = sqrt(pow(x,2) + pow(y,2));
 
 	DLOG("localPosition x=%f y=%f a=%f d=%f",x,y,a,d);
@@ -928,8 +929,10 @@ void prepareProtocolMap(void)
 	t = addNewTemplate("pos",p);
 	addNewPreparedField("lat",t,p);
 	addNewPreparedField("lon",t,p);
-	addNewPreparedField("heading",t,p);
-	addNewPreparedFunction("alt",setLocation,t,p);
+	addNewPreparedField("alt",t,p);
+	
+	t = addNewTemplate("heading",p);
+	addNewPreparedFunction("heading",setLocation,t,p);
 		
 	// NETWORK
 	p = protocol("NETWORK");
