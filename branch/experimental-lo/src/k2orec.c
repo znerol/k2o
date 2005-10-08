@@ -518,12 +518,15 @@ setLocation(k2oProtocol* proto, k2oProtoField* field)
 		!(headf = *field_hash_get(proto->prepared,"heading")) ||
 		!(headf->value[0]) )
 	{
+		WLOG("setLocation() failed");
 		return -1;
 	}
 	lat = atof(latf->value);
 	lon = atof(lonf->value);
 	
 	double h = atof(headf->value);
+	DLOG("setLocation(): lat=%f lon=%f head=%f",lat,lon,h);
+
 	if (h != 0.0) {
 		heading = h * torad;
 	}
@@ -546,6 +549,7 @@ localPosition(k2oProtocol* proto, k2oProtoField* field)
 		!field_hash_contains_key(proto->prepared,"local_d") ||
 		!(locdf = *field_hash_get(proto->prepared,"local_d")) )
 	{
+		WLOG("localPosition failed");
 		return -1;
 	}
 	
@@ -568,17 +572,21 @@ localPosition(k2oProtocol* proto, k2oProtoField* field)
 	
 	agglat = atof(agglatf->value);
 	agglon = atof(agglonf->value);
+	aggpts = atoi(aggpointsf->value);
+	
 
-	int x, y, a, d;
+	DLOG("localPosition agglat=%f agglon=%f aggpts=%d",agglat,agglon,aggpts);
+	double x, y, a, d;
 	
 	static const double ue = 111195.0; // FIXME ????
 	
 	// calculate local distance, angle and relative position to viewer (gps).
 	a = heading;
-	y = (agglat - lat) * ue * cos(a);
-	x = (agglon - lon) * ue * cos(lat*torad) * -sin(a);
+	y = (agglat/aggpts - lat) * ue * cos(a);
+	x = (agglon/aggpts - lon) * ue * cos(lat*torad) * -sin(a);
 	d = sqrt(pow(x,2) + pow(y,2));
-	
+
+	DLOG("localPosition x=%f y=%f a=%f d=%f",x,y,a,d);
 	sprintf(locxf->value,"%f",x);
 	sprintf(locyf->value,"%f",y);
 	sprintf(locaf->value,"%f",a);
