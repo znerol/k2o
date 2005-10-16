@@ -32,5 +32,3 @@ int string_equal(const char* str1, const char* str2)
 DEFINE_HASH(str_str, char*, char*, hash_string, string_equal)
 DEFINE_HASH(str_ptr, char*,  void*, hash_string, string_equal)
 DEFINE_LIST(void*,ptr)
-
-

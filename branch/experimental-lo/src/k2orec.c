@@ -1232,14 +1232,14 @@ int kismetParse(const char* data) {
 		
 		setupCapability(fbuf);
 	}	
-	
+	/*
 	else if (!strncmp(header, "*TIME", 64)) {
 		time_t	serv_time;
         if (sscanf(data+hdrlen, "%d\n", (int *) &serv_time) < 1)
             return 0;
 		
     }
-	
+	*/
 	else if (!strncmp(header, "*STATUS", 64)) {
 		char status[1024];
         if (sscanf(data+hdrlen, "%1023[^\n]\n", status) != 1)

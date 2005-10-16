@@ -107,7 +107,7 @@ fileIndexThreadEntry()
 	char		lastLine[1024];
 	int			c = 0;
 	int			cpos = 0;
-	int			lpos = 0;
+	long int	lpos = 0;
 	timedMessage*	tm = NULL;
 	
 	// path hash table
@@ -233,14 +233,17 @@ fileIndexThreadEntry()
 			clearerr(infd);
 
 			// wrap around if we aren't rewindable (lowmem) and looping is enabled
-			if(rewindable && loop) {
+			if(!rewindable && loop) {
+				DLOG("read to last message. wrapping around.");
 				mchain = NULL;
 				rewind(infd);
+				// lpos = 0;
 				// FIXME: check errno here
 			}
-			
-			// sleep shortly (one millisecond) so we don't eat the whole cpu. 
-			usleep(1000);
+			else {
+				// sleep shortly (one millisecond) so we don't eat the whole cpu. 
+				usleep(1000);
+			}
 		}
 	}
 	pthread_exit(NULL);
@@ -571,9 +574,12 @@ main (int argc, char **argv)
 							
 							if (loop) {
 								// flip over if we are in loop mode
+								DLOG("moved to last message. wrapping around.");
 								limited = 1;
 								limit = timespec_dadd(now, 0);
 								nmsg = mchain;
+								currentline = 0;
+								
 							}
 							else {
 								// wait unlimited
