@@ -87,16 +87,21 @@ void timespec_now(struct timespec *ts)
 
 double timespec_diff(struct timespec a, struct timespec b)
 {
-	return (((double)a.tv_sec - (double)b.tv_sec) + ((double)a.tv_nsec - (double)b.tv_nsec) / NANO);
+	return (
+		((double)(a.tv_sec) - (double)(b.tv_sec))
+	  + ((double)(a.tv_nsec) - (double)(b.tv_nsec)) / NANO
+	);
 }
 
 struct timespec timespec_dadd(struct timespec a, double d)
 {
-	double	intpart;
-	struct timespec r;
-	r.tv_nsec = modf((double)a.tv_sec + (double)a.tv_sec / NANO + d,
-					  &intpart) * NANO;
-	r.tv_sec = intpart;
+	double	sec;
+	double	in = (double)a.tv_sec + (double)a.tv_nsec / NANO + d;
+	struct	timespec r;
+	double  nsec = modf(in, &sec) * NANO;
+	
+	r.tv_sec = (time_t)sec;
+	r.tv_nsec = (long)nsec;
 	return r;
 }
 
@@ -127,12 +132,13 @@ fileIndexThreadEntry()
 				pthread_exit(NULL);
 			}
 			lastLine[cpos] = c;
+			cpos++;
 			
 			if(c == '\n') {
 				char*	ctx;
 				
 				// end and parse line
-				lastLine[cpos] = '\0';
+				lastLine[cpos-1] = '\0';
 				
 				// make new messsage
 				tm = (timedMessage*)malloc(sizeof(timedMessage));
@@ -141,8 +147,10 @@ fileIndexThreadEntry()
 				// read timestamp
 				char *timestr = strtok_r(lastLine, " ", &ctx);
 				double tsec;
-				tm->time.tv_nsec = modf(strtod(timestr,NULL),&tsec) * NANO;
-				tm->time.tv_sec = tsec;
+				double tnsec = modf(strtod(timestr,NULL),&tsec) * NANO;
+				tm->time.tv_nsec = (long)tnsec;
+				tm->time.tv_sec = (time_t)tsec;
+				DLOG1("timestr = %s, tsec = %f, tnsec = %f",timestr,tsec,tnsec);
 				
 				// copy path
 				char *path = strtok_r(NULL, " ", &ctx);
@@ -222,9 +230,9 @@ fileIndexThreadEntry()
 					DLOG1("filereader thread unlocked");
 					
 				}
+				// set cpos to zero (will be incrased in outer block!!!)
 				cpos = 0;
 			}
-			cpos++;
 		}
 		funlockfile(infd);
 		
@@ -495,8 +503,15 @@ main (int argc, char **argv)
 	}
 	mcurrent = mchain;
 	
-	// set lasttime to startup time. lastpos and curpos are set to {0,0}.
+	// set lasttime to startup time.
 	timespec_now(&lasttime);
+	//lasttime = timespec_dadd(lasttime,-(((double)mchain->time.tv_sec) + ((double)mchain->time.tv_nsec) / NANO));
+	
+	//lasttime.tv_sec = lasttime.tv_sec - mchain->time.tv_sec;
+	
+	// curpos is set to the time of the first message.
+	lastpos = mchain->time;
+	DLOG1("lastpos.tv_sec = %d lastpos.tv_nsec = %d",lastpos.tv_sec, lastpos.tv_nsec);
 
 	pthread_mutex_unlock(&schedulerMutex);
 	DLOG1("startup unlocked");
@@ -548,10 +563,13 @@ main (int argc, char **argv)
 					timespec_now(&now);
 					dnsec = timespec_diff(now, lasttime);
 					curpos = timespec_dadd(lastpos, dnsec * rate);
+					DLOG1("curpos.tv_sec = %d, curpos.tv_nsec = %d",curpos.tv_sec, curpos.tv_nsec);
+					DLOG1("mcurrent->time.tv_sec = %d, mcurrent->time.tv_nsec = %d",mcurrent->time.tv_sec, mcurrent->time.tv_nsec);
 					
-					double dnpos = timespec_diff(mcurrent->time, curpos);
+					double dnpos = timespec_diff(mcurrent->time,curpos);
 					double dnwait = dnpos / rate;
 					
+					DLOG1("dnsec = %f, dnpos = %f, dnwait = %f",dnsec, dnpos,dnwait);
 					
 					// if dnwait is positiv we have to wait for the next message
 					if (dnwait > 0) {
