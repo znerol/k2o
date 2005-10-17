@@ -305,7 +305,7 @@ void catchTerm(int sig) {
 	if (oscServerThread) {
 		lo_server_thread_stop(oscServerThread);
 	}
-	exit(sig);
+	exit(0);
 }
 
 void usage(char *executable){
